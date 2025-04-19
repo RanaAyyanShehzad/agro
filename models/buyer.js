@@ -36,5 +36,5 @@ const schema = new mongoose.Schema({
       },{
         timestamps:true,
       });
-export const farmer = mongoose.model("Farmer", schema);
+export const buyer = mongoose.model("Buyer", schema);
 

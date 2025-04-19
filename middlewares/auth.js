@@ -1,14 +1,27 @@
 import jwt from "jsonwebtoken";
-import {farmer} from "../models/farmer.js"
-export const isAuthenticated=async (req,res,next)=>{
-    const {token}=req.cookies;
-    console.log({token});
-    if(!token)
-        return res.status(404).json({
-            success:false,
-            message:"Login First",
-        });
-    const decoded=jwt.verify(token,process.env.JWT_SECRET);
-    req.user=await farmer.findById(decoded._id);
-    next();
+import { farmer } from "../models/farmer.js"
+import ErrorHandler from "./error.js";
+import { buyer } from "../models/buyer.js";
+export const isAuthenticated = async (req, res, next) => {
+    try {
+        const { token } = req.cookies;
+        if (!token) return next(new ErrorHandler("Login First", 404));
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = await farmer.findById(decoded._id);
+        next();
+    } catch (error) {
+        next(error);
+    }
 }
+export const authBuyer = async (req, res, next) => {
+    try {
+        const { token } = req.cookies;
+        if (!token) return next(new ErrorHandler("Login First", 404));
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = await buyer.findById(decoded._id);
+        next();
+    } catch (error) {
+        next(error);
+    }
+}
+
