@@ -1,9 +1,10 @@
-import { buyer } from "../models/buyer.js";
+
 import bcrypt from "bcrypt";
 import { sendCookie } from "../utils/features.js"
 import { sendSMS } from "../utils/sendSMS.js";
 import { sendEmail } from "../utils/sendEmail.js";
 import ErrorHandler from "../middlewares/error.js";
+import { supplier } from "../models/supplier.js";
 export const register = async (req, res, next) => {
     try {
         const { name, email, password, phone, address } = req.body;
@@ -29,12 +30,12 @@ export const register = async (req, res, next) => {
             return next(new ErrorHandler("Address is required", 400));
         }
         // check user exit or not
-        let user = await buyer.findOne({ email });
+        let user = await supplier.findOne({ email });
         if (user) return next(new ErrorHandler("User already exit", 409));
         
         //hashed password
         const hashedPassword = await bcrypt.hash(password, 10);
-        user = await buyer.create({ name, email, password: hashedPassword, phone, address });
+        user = await supplier.create({ name, email, password: hashedPassword, phone, address });
         sendCookie(user, res, "Regestered Successfully", 201);
     } catch (error) {
         next(error);
@@ -43,7 +44,7 @@ export const register = async (req, res, next) => {
 export const Login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
-        let user = await buyer.findOne({ email }).select("+password");
+        let user = await supplier.findOne({ email }).select("+password");
         if (!user) return next(new ErrorHandler("Invalid Email or Password", 404));
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -64,7 +65,7 @@ export const changePassword = async (req, res, next) => {
       if (newPassword.length < 8 || !/[!@#$%^&*]/.test(newPassword))
         return next(new ErrorHandler("Password must be 8+ characters and include special characters", 400));
    
-      const user = await buyer.findById(req.user._id).select("+password");
+      const user = await supplier.findById(req.user._id).select("+password");
   
       const isMatch = await bcrypt.compare(oldPassword, user.password);
       if (!isMatch) return next(new ErrorHandler("Old password is incorrect", 401));
@@ -95,7 +96,7 @@ export const Logout = (req, res) => {
 };
 export const deleteProfile = async (req, res, next) => {
     try {
-        let user = await buyer.findById(req.user._id);
+        let user = await supplier.findById(req.user._id);
         if (!user) return next(new ErrorHandler("Delete Failed", 404));
         await user.deleteOne();
         res.status(200).clearCookie("token").json({
@@ -110,12 +111,12 @@ export const deleteProfile = async (req, res, next) => {
         });
     }
 };
-export const getAllBuyers = async (req, res, next) => {
+export const getAllSuppliers = async (req, res, next) => {
     try {
-        const buyers = await buyer.find().select("-password"); // exclude password
+        const suppliers = await supplier.find().select("-password"); // exclude password
         res.status(200).json({
             success: true,
-            buyers,
+            suppliers,
         });
     } catch (error) {
         next(error);
@@ -123,7 +124,7 @@ export const getAllBuyers = async (req, res, next) => {
 };
 export const updateProfile = async (req, res, next) => {
     try {
-      const user = await buyer.findById(req.user._id);
+      const user = await supplier.findById(req.user._id);
       if (!user) return next(new ErrorHandler("Update Failed", 404));
   
       const { name, email, phone, address } = req.body;
@@ -167,9 +168,9 @@ export const sendOTP = async (req, res, next) => {
     let user;
 
     if (email) {
-      user = await buyer.findOne({ email });
+      user = await supplier.findOne({ email });
     } else if (phone) {
-      user = await buyer.findOne({ phone });
+      user = await supplier.findOne({ phone });
     } else {
       return next(new ErrorHandler("Please provide email or phone", 400));
     }
@@ -201,8 +202,8 @@ export const resetPassword = async (req, res, next) => {
       if (!otp || !newPassword) return next(new ErrorHandler("OTP and new password are required", 400));
   
       const user = email
-        ? await buyer.findOne({ email })
-        : await buyer.findOne({ phone });
+        ? await supplier.findOne({ email })
+        : await supplier.findOne({ phone });
   
       if (!user) return next(new ErrorHandler("User not found", 404));
       if (user.otp !== otp || user.otpExpiry < Date.now()) {

@@ -140,20 +140,6 @@ export const updateProfile = async (req, res, next) => {
         user.email = email;
       }
   
-      // Password validation
-      if (password) {
-        const passwordRegex =
-          /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-        if (!passwordRegex.test(password))
-          return next(
-            new ErrorHandler(
-              "Password must be at least 8 characters long and include uppercase, lowercase, number, and special character.",
-              400
-            )
-          );
-        user.password = await bcrypt.hash(password, 10);
-      }
-  
       // Phone validation
       if (phone) {
         const phoneRegex = /^\+92\d{10}$/;
@@ -232,7 +218,7 @@ export const resetPassword = async (req, res, next) => {
       user.otp = null;
       user.otpExpiry = null;
       await user.save();
-  
+      await sendEmail(email,"FarmConnect Password Reset","Your password has been reset");
       res.status(200).json({
         success: true,
         message: "Password reset successful",

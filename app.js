@@ -1,6 +1,7 @@
 import express from "express"
 import farmerRoutes from "./routes/farmer.js";
 import buyerRoutes from "./routes/buyer.js";
+import supplierRoutes from "./routes/supplier.js";
 import {config} from "dotenv";
 import cookieParser from "cookie-parser";
 import { errorMiddleware } from "./middlewares/error.js";
@@ -15,5 +16,6 @@ app.use(cookieParser());
 //routes
 app.use("/api/farmers",farmerRoutes);
 app.use("/api/buyers",buyerRoutes);
+app.use("/api/suppliers",supplierRoutes);
 //error handling
 app.use(errorMiddleware);
