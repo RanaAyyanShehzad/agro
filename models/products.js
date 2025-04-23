@@ -1,6 +1,19 @@
 import mongoose from "mongoose";
+const uploadeerschema=mongoose.Schema({
+    userID:{
+        type:mongoose.Schema.Types.ObjectId,
+        required:true,
+       },
+       role:{
+        type:String,
+        required:true,
+       },uploaderName:{
+        type:String,
+        trim:true,
+       }  
+},{ _id: false });
 const schema = mongoose.Schema({
-    tiltle:{
+    name:{
         type:String,
         required:true,
         trim:true,
@@ -18,14 +31,18 @@ const schema = mongoose.Schema({
     unit:{
         type:String,
         required:true,
-    },
-    quantity:{
+    },quantity:{
         type:Number,
         required:true,
         min:0,
-    },isAvailable:{
+    },
+    upLoadedBy:{
+       type:uploadeerschema,
+       required:true,  
+    },
+    isAvailable:{
         type:Boolean,
         default:true,
     },
 });
-export const products=mongoose.model("Products",schema);
+export const product=mongoose.model("Products",schema);

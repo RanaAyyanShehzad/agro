@@ -8,32 +8,17 @@ export const isAuthenticated = async (req, res, next) => {
         const { token } = req.cookies;
         if (!token) return next(new ErrorHandler("Login First", 404));
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = await farmer.findById(decoded._id);
+        const role=decoded.role;
+        if(role=="farmer"){
+            req.user = await farmer.findById(decoded._id);
+        }else if(role=="buyer"){
+            req.user = await buyer.findById(decoded._id);
+        }else if(role=="supplier"){
+            req.user = await supplier.findById(decoded._id);
+        }
+        
         next();
     } catch (error) {
         next(error);
     }
 }
-export const authBuyer = async (req, res, next) => {
-    try {
-        const { token } = req.cookies;
-        if (!token) return next(new ErrorHandler("Login First", 404));
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = await buyer.findById(decoded._id);
-        next();
-    } catch (error) {
-        next(error);
-    }
-}
-export const authSupplier = async (req, res, next) => {
-    try {
-        const { token } = req.cookies;
-        if (!token) return next(new ErrorHandler("Login First", 404));
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = await supplier.findById(decoded._id);
-        next();
-    } catch (error) {
-        next(error);
-    }
-}
-
