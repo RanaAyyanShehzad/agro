@@ -1,5 +1,5 @@
 import express from "express";
-import { register,Login,getMyProfile,Logout, updateProfile, deleteProfile, changePassword, sendOTP, resetPassword, getAllSuppliers } from "../controllers/supplier.js";
+import { register,Login,getMyProfile,Logout, updateProfile, deleteProfile, changePassword, sendOTP, resetPassword, getAllSuppliers, getSupplierProfileWithProducts } from "../controllers/supplier.js";
 import {  isAuthenticated } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -14,5 +14,5 @@ router.get("/all",getAllSuppliers);
 router.put("/change-password",isAuthenticated,changePassword);
 router.post("/forgot-password", sendOTP);
 router.post("/reset-password", resetPassword);
-
+router.get("/supplier/:supplierId",isAuthenticated,getSupplierProfileWithProducts);
 export default router;

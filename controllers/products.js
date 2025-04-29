@@ -5,176 +5,138 @@ import { farmer } from "../models/farmer.js";
 import { supplier } from "../models/supplier.js";
 import jwt from "jsonwebtoken";
 
+// Utility: Decode user and role from JWT token
+const getUserAndRole = (req) => {
+    const { token } = req.cookies;
+    if (!token) throw new ErrorHandler("Authentication token missing", 401);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return { userId: req.user._id, role: decoded.role };
+};
+
+// Utility: Get uploader by role
+const getUploader = async (userId, role) => {
+    if (role === "farmer") {
+        return await farmer.findById(userId).select("+password");
+    } else if (role === "supplier") {
+        return await supplier.findById(userId).select("+password");
+    } else {
+        throw new ErrorHandler("Only farmers or suppliers can add products", 403);
+    }
+};
+
+// Add product
 export const addProduct = async (req, res, next) => {
     try {
         const { name, description, price, unit, quantity } = req.body;
-        const _id = req.user._id;
-        const { token } = req.cookies;
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const role = decoded.role;
-        let uploaderName, uploader;
-        let isAvailable = true;
-        if (!name || name.trim() === "") {
-            return next(new ErrorHandler("Name is required", 400));
+        const { userId, role } = getUserAndRole(req);
+
+        if (!name?.trim() || !description?.trim() || !unit?.trim() || price == null || quantity == null) {
+            return next(new ErrorHandler("All fields are required", 400));
         }
-        if (!description || description.trim() === "") {
-            return next(new ErrorHandler("Description is required", 400));
-        }
-        if (!price) {
-            return next(new ErrorHandler("Price is required", 400));
-        }
-        if (!unit || unit.trim() === "") {
-            return next(new ErrorHandler("Unit is required", 400));
-        }
-        if (quantity === undefined || quantity === null) {
-            return next(new ErrorHandler("Quantity is required", 400));
-        }
-        if (role == "farmer") {
-            uploader = await farmer.findById(_id).select("+password");
-        } else if (role == "supplier") {
-            uploader = await supplier.findById(_id).select("+password");
-        } else {
-            return next(new ErrorHandler("Buyer can not add product", 400));
-        }
-        uploaderName = uploader.name;
-        if (quantity <= 0) {
-            isAvailable = false;
-        }
-        const newProduct = await product.create({
+
+        const uploader = await getUploader(userId, role);
+        const uploaderName = uploader.name;
+        const isAvailable = quantity > 0;
+
+        await product.create({
             name,
             description,
             price,
             unit,
             quantity,
-            upLoadedBy: {  //  spelling fix
-                userID: _id,
+            isAvailable,
+            upLoadedBy: {
+                userID: userId,
                 role,
                 uploaderName,
-            }, isAvailable
+            },
         });
 
         successMessage(res, "Product added successfully", 201);
     } catch (error) {
         next(error);
     }
-}
+};
+
+// Get all products
 export const getAllProducts = async (req, res, next) => {
     try {
         const products = await product.find();
-        res.status(200).json({
-            success: true,
-            products,
-        });
+        res.status(200).json({ success: true, products });
     } catch (error) {
         next(error);
     }
-}
+};
+
+// Get current user's products
 export const getMyProduct = async (req, res, next) => {
     try {
-        const userId = req.user._id;
-        const { token } = req.cookies;
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const role = decoded.role;
-        if(role=="buyer"){
-            return next(new ErrorHandler("Buyer do not have any product",403));
+        const { userId, role } = getUserAndRole(req);
+        if (role === "buyer") {
+            return next(new ErrorHandler("Buyers do not have products", 403));
         }
+
         const products = await product.find({ "upLoadedBy.userID": userId });
-
-        res.status(200).json({
-            success: true,
-            products,
-        });
-
+        res.status(200).json({ success: true, products });
     } catch (error) {
         next(error);
     }
-}
+};
+
+// Delete a product
 export const deleteProduct = async (req, res, next) => {
     try {
+        const { userId, role } = getUserAndRole(req);
         const productId = req.params.id;
-        const userId = req.user._id;
-        const { token } = req.cookies;
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const role = decoded.role;
-         // Find the product first
-         const productToDelete = await product.findById(productId);
-        // Check if the logged-in user is the uploader
-        if (
-            productToDelete.upLoadedBy.userID.toString() !== userId.toString() ||
-            productToDelete.upLoadedBy.role !== role
-        ) {
+
+        const productToDelete = await product.findById(productId);
+        if (!productToDelete) return next(new ErrorHandler("Product not found", 404));
+
+        const isUploader = productToDelete.upLoadedBy.userID.toString() === userId.toString() &&
+                           productToDelete.upLoadedBy.role === role;
+        if (!isUploader) {
             return next(new ErrorHandler("You are not allowed to delete this product", 403));
         }
-       
 
-        if (!productToDelete) {
-            return next(new ErrorHandler("Product not found", 404));
-        }
-
-        
-        
-
-        // Delete the product
         await product.deleteOne({ _id: productId });
-
         successMessage(res, "Product deleted successfully", 200);
     } catch (error) {
         next(error);
     }
 };
 
+// Update a product
 export const updateProduct = async (req, res, next) => {
     try {
+        const { userId, role } = getUserAndRole(req);
         const productId = req.params.id;
-        const userId = req.user._id;
-        const { token } = req.cookies;
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const role = decoded.role;
         const { name, description, price, unit, quantity } = req.body;
-        let isAvailable = true;
 
-        // Find the product first
         const productToUpdate = await product.findById(productId);
+        if (!productToUpdate) return next(new ErrorHandler("Product not found", 404));
 
-        if (!productToUpdate) {
-            return next(new ErrorHandler("Product not found", 404));
+        const isUploader = productToUpdate.upLoadedBy.userID.toString() === userId.toString() &&
+                           productToUpdate.upLoadedBy.role === role;
+        if (!isUploader) {
+            return next(new ErrorHandler("You are not allowed to update this product", 403));
         }
-        //check if uploader is the user to update product
-        if (
-            productToUpdate.upLoadedBy.userID.toString() !== userId.toString() ||
-            productToUpdate.upLoadedBy.role !== role
-        ) {
-            return next(new ErrorHandler("You are not allowed to Update this product", 403));
+
+        if (!name?.trim() || !description?.trim() || !unit?.trim() || price == null || quantity == null) {
+            return next(new ErrorHandler("All fields are required", 400));
         }
-        if (!name || name.trim() === "") {
-            return next(new ErrorHandler("Name is required", 400));
-        }
-        if (!description || description.trim() === "") {
-            return next(new ErrorHandler("Description is required", 400));
-        }
-        if (!price) {
-            return next(new ErrorHandler("Price is required", 400));
-        }
-        if (!unit || unit.trim() === "") {
-            return next(new ErrorHandler("Unit is required", 400));
-        }
-        if (quantity === undefined || quantity === null) {
-            return next(new ErrorHandler("Quantity is required", 400));
-        }
-        if (quantity <= 0) {
-            isAvailable = false;
-        }
-        productToUpdate.name = name;
-        productToUpdate.description = description;
-        productToUpdate.price = price;
-        productToUpdate.unit = unit;
-        productToUpdate.quantity = quantity;
-        productToUpdate.isAvailable = isAvailable;
+
+        Object.assign(productToUpdate, {
+            name,
+            description,
+            price,
+            unit,
+            quantity,
+            isAvailable: quantity > 0,
+        });
 
         await productToUpdate.save();
-        successMessage(res, "Product updated successfuly", 200);
+        successMessage(res, "Product updated successfully", 200);
     } catch (error) {
         next(error);
     }
-
-}
+};

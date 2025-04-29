@@ -1,5 +1,6 @@
 import express from "express"
 import farmerRoutes from "./routes/farmer.js";
+import orderroutes from "./routes/order.js";
 import buyerRoutes from "./routes/buyer.js";
 import supplierRoutes from "./routes/supplier.js";
 import productRoutes from "./routes/product.js";
@@ -19,5 +20,6 @@ app.use("/api/farmers",farmerRoutes);
 app.use("/api/buyers",buyerRoutes);
 app.use("/api/suppliers",supplierRoutes);
 app.use("/api/products",productRoutes);
+app.use("/api/order",orderroutes);
 //error handling
 app.use(errorMiddleware);

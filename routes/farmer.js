@@ -1,5 +1,5 @@
 import express from "express";
-import { register,Login,getMyProfile,Logout, updateProfile, deleteProfile,getAllFarmers, changePassword, sendOTP, resetPassword } from "../controllers/farmer.js";
+import { register,Login,getMyProfile,Logout, updateProfile, deleteProfile,getAllFarmers, changePassword, sendOTP, resetPassword, getFarmerProfileWithProducts } from "../controllers/farmer.js";
 import { isAuthenticated } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -14,5 +14,6 @@ router.get("/all",getAllFarmers);
 router.put("/changepassword",isAuthenticated,changePassword);
 router.post("/forgot-password", sendOTP);
 router.post("/reset-password", resetPassword);
+router.get("/farmer/:farmerId",isAuthenticated,getFarmerProfileWithProducts);
 
 export default router;
