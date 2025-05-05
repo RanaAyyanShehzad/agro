@@ -33,7 +33,10 @@ export const addProduct = async (req, res, next) => {
         if (!name?.trim() || !description?.trim() || !unit?.trim() || price == null || quantity == null) {
             return next(new ErrorHandler("All fields are required", 400));
         }
-
+        const nameRegex = /^[a-zA-Z\s-]+$/;
+        if (!nameRegex.test(name)) {
+            return next(new ErrorHandler("Name can only contain letters, spaces, and hyphens.", 400));
+        }
         const uploader = await getUploader(userId, role);
         const uploaderName = uploader.name;
         const isAvailable = quantity > 0;
@@ -62,6 +65,24 @@ export const addProduct = async (req, res, next) => {
 export const getAllProducts = async (req, res, next) => {
     try {
         const products = await product.find();
+        res.status(200).json({ success: true, products });
+    } catch (error) {
+        next(error);
+    }
+};
+export const getAllProductsForFarmer = async (req, res, next) => {
+    try {
+        const { userId, role } = getUserAndRole(req);
+
+        if (role !== "farmer") {
+            return next(new ErrorHandler("Only farmers can access this route", 403));
+        }
+
+        const products = await product.find({
+            isAvailable: true,
+            "upLoadedBy.userID": { $ne: userId } // exclude own products
+        });
+
         res.status(200).json({ success: true, products });
     } catch (error) {
         next(error);

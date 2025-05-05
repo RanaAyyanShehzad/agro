@@ -1,28 +1,15 @@
-import express from "express";
-import { 
-  createOrder,
-  getMyOrders,
-  getOrderById,
-  cancelOrder,
-  updateOrderStatus,
-  getSupplierOrders,
-  getAllOrders
-} from "../controllers/order.js";
-import { isAuthenticated } from "../middlewares/auth.js";
+import express from "express"
+import { isAuthenticated } from "../middlewares/auth.js"
+import { cancelOrder, createOrder, getAllOrders, getOrderById, getSupplierOrders, getUserOrders, updateOrderStatus } from "../controllers/order.js";
+const router=express.Router();
+router.use(isAuthenticated);
+router.post('/place-order',createOrder);
+router.get('/user-orders',getUserOrders);
+router.get('/item/:orderId',getOrderById);
+router.put('/update-status/:orderId',updateOrderStatus);
+router.put('/cancel/:orderId',cancelOrder);
+router.get('/supplier-orders',getSupplierOrders);
+router.get('/all',getAllOrders);
 
-const router = express.Router();
-
-// Buyer routes
-router.post("/create", isAuthenticated, createOrder);
-router.get("/my", isAuthenticated, getMyOrders);
-router.get("/:orderId", isAuthenticated, getOrderById);
-router.put("/:orderId/cancel", isAuthenticated, cancelOrder);
-
-// Supplier/Farmer routes
-router.put("/:orderId/status", isAuthenticated, updateOrderStatus);
-router.get("/supplier/all", isAuthenticated, getSupplierOrders);
-
-// Admin routes
-router.get("/admin/all", isAuthenticated, getAllOrders);
 
 export default router;

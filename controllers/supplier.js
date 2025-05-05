@@ -5,7 +5,7 @@ import { sendCookie } from "../utils/features.js"
 import { sendSMS } from "../utils/sendSMS.js";
 import { sendEmail } from "../utils/sendEmail.js";
 import ErrorHandler from "../middlewares/error.js";
-import { validation } from "../utils/condentialsValidation.js";
+import { validation } from "../utils/Validation.js";
 import {
   hashPassword,
   validatePassword,
@@ -20,7 +20,7 @@ import {
 // Controller functions
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, phone, address } = req.body;
+    const { name, email, password, phone, address, imgURL } = req.body;
 
     // Use the validation function
     await validation(next, name, email, password, phone, address);
@@ -35,7 +35,8 @@ export const register = async (req, res, next) => {
       email,
       password: await hashPassword(password),
       phone,
-      address
+      address,
+      img: imgURL
     });
 
     res.status(200).json({
@@ -140,7 +141,11 @@ export const Logout = (req, res, next) => {
     verifyUserRole(req.cookies.token, "supplier", next);
 
     res.status(200)
-      .cookie("token", "", { expires: new Date(Date.now()) })
+      .cookie("token", "", {
+        expires: new Date(Date.now()),
+        sameSite: process.env.NODE_ENV === 'Development' ? "Lax" : "none", // Prevent CSRF (optional but recommended)
+        secure: process.env.NODE_ENV === 'Development' ? false : true,
+      })
       .json({
         success: true,
         user: req.user,
@@ -173,6 +178,7 @@ export const deleteProfile = async (req, res, next) => {
 
 export const getAllSuppliers = async (req, res, next) => {
   try {
+    verifyUserRole(req.cookies.token, "admin", next);
     const suppliers = await supplier.find().select("-password"); // exclude password
 
     res.status(200).json({
@@ -192,7 +198,7 @@ export const updateProfile = async (req, res, next) => {
     const user = await supplier.findById(req.user._id);
     if (!user) return next(new ErrorHandler("Update Failed", 404));
 
-    const { name, email, phone, address } = req.body;
+    const { name, email, phone, address, imgURL } = req.body;
 
     // Use simplified validation from common utils
     if (name) {
@@ -213,6 +219,9 @@ export const updateProfile = async (req, res, next) => {
     if (address !== undefined) {
       if (!validateAddress(address, next)) return;
       user.address = address;
+    }
+    if (imgURL) {
+      user.img = imgURL;
     }
 
     await user.save();

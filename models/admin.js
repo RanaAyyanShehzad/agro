@@ -24,8 +24,9 @@ const schema = new mongoose.Schema({
       address: {
         type: String,
         required: true,
-      },img:{
-        type:String,
+      },
+      img:{
+        type:String, 
       },
       otp: {
         type: String,
@@ -38,5 +39,5 @@ const schema = new mongoose.Schema({
       },{
         timestamps:true,
       });
-export const farmer = mongoose.model("Farmer", schema);
+export const admin = mongoose.model("Admin", schema);
 

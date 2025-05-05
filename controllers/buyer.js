@@ -4,7 +4,7 @@ import { sendCookie } from "../utils/features.js"
 import { sendSMS } from "../utils/sendSMS.js";
 import { sendEmail } from "../utils/sendEmail.js";
 import ErrorHandler from "../middlewares/error.js";
-import { validation } from "../utils/condentialsValidation.js";
+import { validation } from "../utils/Validation.js";
 import {
   hashPassword,
   validatePassword,
@@ -19,24 +19,25 @@ import {
 // Controller functions
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, phone, address } = req.body;
-    
+    const { name, email, password, phone, address, imgURL } = req.body;
+
     // Use the validation function
     await validation(next, name, email, password, phone, address);
-    
+
     // Check if user exists
     let user = await buyer.findOne({ email });
     if (user) return next(new ErrorHandler("User already exists", 409));
 
     // Create user with hashed password
-    user = await buyer.create({ 
-      name, 
-      email, 
-      password: await hashPassword(password), 
-      phone, 
-      address 
+    user = await buyer.create({
+      name,
+      email,
+      password: await hashPassword(password),
+      phone,
+      address,
+      img: imgURL
     });
-    
+
     res.status(200).json({
       success: true,
       message: "Registered successfully",
@@ -49,13 +50,13 @@ export const register = async (req, res, next) => {
 export const Login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    
+
     let user = await buyer.findOne({ email }).select("+password");
     if (!user) return next(new ErrorHandler("Invalid Email or Password", 404));
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return next(new ErrorHandler("Invalid Email or Password", 404));
-    
+
     sendCookie(user, "buyer", res, `Welcome back, ${user.name}`, 201);
   } catch (error) {
     next(error);
@@ -66,7 +67,7 @@ export const changePassword = async (req, res, next) => {
   try {
     // Verify buyer role
     verifyUserRole(req.cookies.token, "buyer", next);
-    
+
     const { oldPassword, newPassword } = req.body;
 
     if (!oldPassword || !newPassword)
@@ -96,7 +97,7 @@ export const getMyProfile = (req, res, next) => {
   try {
     // Verify buyer role
     verifyUserRole(req.cookies.token, "buyer", next);
-    
+
     res.status(200).json({
       success: true,
       user: req.user,
@@ -110,9 +111,13 @@ export const Logout = (req, res, next) => {
   try {
     // Verify buyer role
     verifyUserRole(req.cookies.token, "buyer", next);
-    
+
     res.status(200)
-      .cookie("token", "", { expires: new Date(Date.now()) })
+      .cookie("token", "", {
+        expires: new Date(Date.now()),
+        sameSite: process.env.NODE_ENV === 'Development' ? "Lax" : "none", // Prevent CSRF (optional but recommended)
+        secure: process.env.NODE_ENV === 'Development' ? false : true,
+      })
       .json({
         success: true,
         user: req.user,
@@ -126,12 +131,12 @@ export const deleteProfile = async (req, res, next) => {
   try {
     // Verify buyer role
     verifyUserRole(req.cookies.token, "buyer", next);
-    
+
     let user = await buyer.findById(req.user._id);
     if (!user) return next(new ErrorHandler("Delete Failed", 404));
-    
+
     await user.deleteOne();
-    
+
     res.status(200)
       .clearCookie("token")
       .json({
@@ -149,8 +154,9 @@ export const deleteProfile = async (req, res, next) => {
 
 export const getAllBuyers = async (req, res, next) => {
   try {
+    const decoded = verifyUserRole(req.cookies.token, "admin", next);
     const buyers = await buyer.find().select("-password"); // exclude password
-    
+
     res.status(200).json({
       success: true,
       buyers,
@@ -164,11 +170,11 @@ export const updateProfile = async (req, res, next) => {
   try {
     // Verify buyer role
     verifyUserRole(req.cookies.token, "buyer", next);
-    
+
     const user = await buyer.findById(req.user._id);
     if (!user) return next(new ErrorHandler("Update Failed", 404));
 
-    const { name, email, phone, address } = req.body;
+    const { name, email, phone, address, imgURL } = req.body;
 
     // Use simplified validation from common utils
     if (name) {
@@ -190,6 +196,9 @@ export const updateProfile = async (req, res, next) => {
       if (!validateAddress(address, next)) return;
       user.address = address;
     }
+    if (imgURL) {
+      user.img = imgURL;
+    }
 
     await user.save();
     sendCookie(user, "buyer", res, "Updated successfully", 200);
@@ -201,11 +210,11 @@ export const updateProfile = async (req, res, next) => {
 export const sendOTP = async (req, res, next) => {
   try {
     const { email, phone } = req.body;
-    
+
     if (!email && !phone) {
       return next(new ErrorHandler("Please provide email or phone", 400));
     }
-    
+
     let user;
     if (email) {
       user = await buyer.findOne({ email });

@@ -5,9 +5,9 @@ export const validation = async (next, Name, email, password, phone, address) =>
         // Throw error to stop execution in the calling function
         throw new Error("Validation failed");
     }
-    const nameRegex = /^[a-zA-Z\s-]+$/;
+    const nameRegex = /^[a-zA-Z\s]+$/;
     if (!nameRegex.test(Name)) {
-        next(new ErrorHandler("Name can only contain letters, spaces, and hyphens.", 400));
+        next(new ErrorHandler("Name can only contain letters and spaces.", 400));
         throw new Error("Validation failed");
     }
     //Checking email pattern

@@ -12,8 +12,9 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
     .cookie("token", token, {
       httpOnly: true,
       maxAge: 10 * 60 * 1000, // 10 minutes
-      sameSite: "strict", // Prevent CSRF (optional but recommended)
-      secure: process.env.NODE_ENV === "production", // HTTPS only in production
+      sameSite:process.env.NODE_ENV==='Development' ?"Lax": "none", // Prevent CSRF (optional but recommended)
+      secure:process.env.NODE_ENV==='Development' ? false: true,
+      
     })
     .json({
       success: true,

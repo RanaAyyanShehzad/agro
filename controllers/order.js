@@ -1,283 +1,327 @@
-import { Order } from "../models/order.js";
-import { product } from "../models/products.js";
-import ErrorHandler from "../middlewares/error.js";
+import { Order } from '../models/order.js';
+import { Cart } from '../models/cart.js';
 import jwt from "jsonwebtoken";
+import ErrorHandler from '../middlewares/error.js';
 
-// Create a new order
-export const createOrder = async (req, res, next) => {
-  try {
+const getRole = (req) => {
     const { token } = req.cookies;
+    if (!token) throw new ErrorHandler("Authentication token missing", 401);
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    if (decoded.role !== "buyer") {
-      return next(new ErrorHandler("Only buyers can create orders", 403));
+    return { role: decoded.role };
+};
+
+// Create a new order from cart
+export const createOrder = async (req, res,next) => {
+  try {
+    const { cartId, paymentMethod, street, city, zipCode, phoneNumber,notes } = req.body;
+    const userId = req.user.id; // Assuming user ID comes from auth middleware
+    const decode = getRole(req);
+    // Find the cart and make sure it belongs to the user
+    const cart = await Cart.findOne({ 
+      _id: cartId, 
+      userId: userId 
+    });
+
+    if (!cart) {
+      return next(new ErrorHandler("Cart not found or doesn't belong to you",404));
     }
-    
-    const { products: orderProducts, shippingAddress, paymentMethod, notes } = req.body;
-    
-    if (!orderProducts || !Array.isArray(orderProducts) || orderProducts.length === 0) {
-      return next(new ErrorHandler("No products provided for order", 400));
+
+    if (cart.products.length === 0) {
+      return next(new ErrorHandler("Cannot create order with empty cart",400));
     }
-    
-    if (!shippingAddress) {
-      return next(new ErrorHandler("Shipping address is required", 400));
-    }
-    
-    // Validate products and calculate total price
-    let totalPrice = 0;
-    const validatedProducts = [];
-    
-    for (const item of orderProducts) {
-      const productDoc = await product.findById(item.productId);
-      
-      if (!productDoc) {
-        return next(new ErrorHandler(`Product ${item.productId} not found`, 404));
-      }
-      
-      if (!productDoc.isAvailable) {
-        return next(new ErrorHandler(`Product ${productDoc.name} is not available`, 400));
-      }
-      
-      if (item.quantity > productDoc.quantity) {
-        return next(new ErrorHandler(`Insufficient quantity for ${productDoc.name}`, 400));
-      }
-      
-      const itemTotal = productDoc.price * item.quantity;
-      totalPrice += itemTotal;
-      
-      validatedProducts.push({
-        productId: productDoc._id,
-        name: productDoc.name,
-        price: productDoc.price,
-        quantity: item.quantity,
-        supplier: productDoc.upLoadedBy
-      });
-    }
-    
-    // Create the order
-    const order = await Order.create({
-      buyerId: req.user._id,
-      products: validatedProducts,
-      totalPrice,
-      shippingAddress,
-      paymentMethod: paymentMethod || 'cash',
+
+    // Create new order from cart data
+    const orderData = {
+      userId: cart.userId,
+      userRole: cart.userRole,
+      products: cart.products,
+      totalPrice: cart.totalPrice,
+      cartId: cart._id,
+      paymentInfo: {
+        method: paymentMethod,
+        status: "pending"
+      },
+      shippingAddress: {
+        street,
+        city,
+        zipCode,
+        phoneNumber
+      },
       notes
-    });
+    };
+
+    let savedOrder = null;
+    let cartDeleted = false;
     
-    // Update product quantities
-    for (const item of validatedProducts) {
-      await product.findByIdAndUpdate(
-        item.productId,
-        { $inc: { quantity: -item.quantity } }
-      );
+    try {
+      // Step 1: Create order
+      const order = new Order(orderData);
+      savedOrder = await order.save();
+      
+      // Step 2: Delete cart
+      await Cart.findByIdAndDelete(cartId);
+      cartDeleted = true;
+      
+      return res.status(201).json({
+        success: true,
+        message: "Order created successfully",
+        order: savedOrder
+      });
+    } catch (innerError) {
+      // Manual rollback if needed
+      if (savedOrder && !cartDeleted) {
+        // Order created but cart not deleted, remove the order
+        await Order.findByIdAndDelete(savedOrder._id);
+      }
+      throw innerError; // Re-throw to be caught by outer catch
     }
-    
-    res.status(201).json({
-      success: true,
-      message: "Order created successfully",
-      order
-    });
+
   } catch (error) {
     next(error);
   }
 };
 
-// Get all orders for buyer
-export const getMyOrders = async (req, res, next) => {
+// Get all orders for a user
+export const getUserOrders = async (req, res,next) => {
   try {
-    const { token } = req.cookies;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = req.user.id; // Assuming user ID comes from auth middleware
     
-    if (decoded.role !== "buyer") {
-      return next(new ErrorHandler("Access denied", 403));
-    }
+    const orders = await Order.find({ userId })
+      .sort({ createdAt: -1 }); // Sort by newest first
     
-    const orders = await Order.find({ buyerId: req.user._id }).sort({ createdAt: -1 });
-    
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
+      count: orders.length,
       orders
     });
+    
   } catch (error) {
     next(error);
   }
 };
 
-// Get specific order by ID
-export const getOrderById = async (req, res, next) => {
+// Get a specific order by ID
+export const getOrderById = async (req, res,next) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findById(orderId);
+    const userId = req.user.id; // Assuming user ID comes from auth middleware
+    const order = await Order.findOne({ 
+      _id: orderId,
+      userId
+    });
     
     if (!order) {
-      return next(new ErrorHandler("Order not found", 404));
+      return next(new ErrorHandler("Order not found",404));
     }
     
-    // Security check: only the buyer who created the order or the supplier of products can view
-    const { token } = req.cookies;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    if (decoded.role === "buyer") {
-      if (order.buyerId.toString() !== req.user._id.toString()) {
-        return next(new ErrorHandler("You can only view your own orders", 403));
-      }
-    } else if (decoded.role === "farmer" || decoded.role === "supplier") {
-      // Check if supplier has products in this order
-      const hasSupplierProducts = order.products.some(
-        item => item.supplier.userID.toString() === req.user._id.toString() && 
-                item.supplier.role === decoded.role
-      );
-      
-      if (!hasSupplierProducts) {
-        return next(new ErrorHandler("You can only view orders containing your products", 403));
-      }
-    } else {
-      return next(new ErrorHandler("Access denied", 403));
-    }
-    
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       order
     });
+    
   } catch (error) {
-    next(error);
+    next(error); 
   }
 };
 
-// Cancel an order
-export const cancelOrder = async (req, res, next) => {
-  try {
-    const { orderId } = req.params;
-    const order = await Order.findById(orderId);
-    
-    if (!order) {
-      return next(new ErrorHandler("Order not found", 404));
-    }
-    
-    const { token } = req.cookies;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    if (decoded.role !== "buyer" || order.buyerId.toString() !== req.user._id.toString()) {
-      return next(new ErrorHandler("You can only cancel your own orders", 403));
-    }
-    
-    if (order.status === 'delivered' || order.status === 'cancelled') {
-      return next(new ErrorHandler(`Cannot cancel order in ${order.status} status`, 400));
-    }
-    
-    order.status = 'cancelled';
-    await order.save();
-    
-    // Restore product quantities
-    for (const item of order.products) {
-      await product.findByIdAndUpdate(
-        item.productId,
-        { $inc: { quantity: item.quantity } }
-      );
-    }
-    
-    res.status(200).json({
-      success: true,
-      message: "Order cancelled successfully",
-      order
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Update order status (for suppliers/farmers)
-export const updateOrderStatus = async (req, res, next) => {
+// Update order status (admin or farmer only)
+export const updateOrderStatus = async (req, res,next) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
     
-    if (!['processing', 'shipped', 'delivered'].includes(status)) {
-      return next(new ErrorHandler("Invalid status value", 400));
-    }
+    // Validate the user has permission (admin or supplier of products)
+    // This logic would depend on your auth system
+    const userRole = getRole(req).role;
+    const userId = req.user.id;
     
-    const order = await Order.findById(orderId);
+    let order;
+    
+    if (userRole === 'admin') {
+      // Admin can update any order
+      order = await Order.findById(orderId);
+    } else if (userRole === 'farmer' || userRole==='supplier') {
+      // Farmer can only update orders containing their products
+      order = await Order.findOne({ 
+        _id: orderId,
+        "products.supplier.userID": userId
+      });
+    } else {
+      return  next(new ErrorHandler("You don't have permission to update this order",403));
+    }
     
     if (!order) {
-      return next(new ErrorHandler("Order not found", 404));
+      return next(new ErrorHandler("Order not found or you don't have permission to update it", 404));
+
     }
     
-    if (order.status === 'cancelled') {
-      return next(new ErrorHandler("Cannot update cancelled order", 400));
-    }
-    
-    const { token } = req.cookies;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    if (decoded.role !== "farmer" && decoded.role !== "supplier") {
-      return next(new ErrorHandler("Only suppliers/farmers can update order status", 403));
-    }
-    
-    // Check if supplier has products in this order
-    const hasSupplierProducts = order.products.some(
-      item => item.supplier.userID.toString() === req.user._id.toString() && 
-              item.supplier.role === decoded.role
-    );
-    
-    if (!hasSupplierProducts) {
-      return next(new ErrorHandler("You can only update orders containing your products", 403));
-    }
-    
+    // Update the order status
     order.status = status;
+    
+    // If status is delivered, update delivery info
+    if (status === 'delivered') {
+      order.deliveryInfo.actualDeliveryDate = new Date();
+    }
+    
     await order.save();
     
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: `Order status updated to ${status}`,
+      message: "Order status updated successfully",
       order
     });
+    
   } catch (error) {
     next(error);
   }
 };
 
-// Get orders for a supplier/farmer
-export const getSupplierOrders = async (req, res, next) => {
-  try {
-    const { token } = req.cookies;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+// Update payment info
+// export const updatePaymentInfo = async (req, res,next) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { paymentStatus, transactionId } = req.body;
+//     const userId = req.user.id; // Assuming user ID comes from auth middleware
     
-    if (decoded.role !== "farmer" && decoded.role !== "supplier") {
-      return next(new ErrorHandler("Access denied", 403));
+//     const order = await Order.findOne({ 
+//       _id: orderId,
+//       userId // Ensure the order belongs to the user
+//     });
+    
+//     if (!order) {
+//       return next(new ErrorHandler("order not found",404));
+//     }
+    
+//     // Update payment information
+//     order.paymentInfo.status = paymentStatus;
+//     if (transactionId) {
+//       order.paymentInfo.transactionId = transactionId;
+//     }
+    
+//     // If payment is completed, update the paidAt timestamp
+//     if (paymentStatus === 'completed') {
+//       order.paymentInfo.paidAt = new Date();
+//     }
+    
+//     await order.save();
+    
+//     return res.status(200).json({
+//       success: true,
+//       message: "Payment information updated successfully",
+//       order
+//     });
+    
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
+// Cancel order
+export const cancelOrder = async (req, res,next) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id; // Assuming user ID comes from auth middleware
+    
+    const order = await Order.findOne({ 
+      _id: orderId,
+      userId // Ensure the order belongs to the user
+    });
+    
+    if (!order) {
+      return next(new ErrorHandler("Order not found",404));
     }
     
-    // Find orders containing products from this supplier/farmer
-    const orders = await Order.find({
-      "products.supplier.userID": req.user._id,
-      "products.supplier.role": decoded.role
-    }).sort({ createdAt: -1 });
+    // Can only cancel if order is pending or processing
+    if (order.status !== 'pending' && order.status !== 'processing') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel order in '${order.status}' status`
+      });
+    }
     
-    res.status(200).json({
+    // Update order status to canceled
+    order.status = 'canceled';
+    await order.save();
+    
+    return res.status(200).json({
       success: true,
-      orders
+      message: "Order canceled successfully",
+      order
     });
+    
   } catch (error) {
     next(error);
   }
 };
 
-// Get all orders (admin only)
-export const getAllOrders = async (req, res, next) => {
+// Get orders for a specific supplier (farmer/supplier only)
+export const getSupplierOrders = async (req, res,next) => {
   try {
-    // const { token } = req.cookies;
-    // const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const supplierId = req.user.id; // Assuming supplier ID comes from auth middleware
     
-    // if (decoded.role !== "admin") {
-    //   return next(new ErrorHandler("Only admins can access all orders", 403));
-    // }
+    // Find orders containing products from this supplier
+    const orders = await Order.find({
+      "products.supplier.userID": supplierId
+    }).sort({ createdAt: -1 }); // Sort by newest first
     
-    const orders = await Order.find().sort({ createdAt: -1 });
-    
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      ordersCount: orders.length,
+      count: orders.length,
       orders
     });
+    
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Admin: Get all orders with filtering options
+export const getAllOrders = async (req, res,next) => {
+  try {
+    // Check if user is admin
+    if (getRole(req).role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to access all orders"
+      });
+    }
+    
+    const { status, paymentStatus, startDate, endDate, page = 1, limit = 10 } = req.query;
+    
+    // Build filter object
+    const filter = {};
+    
+    if (status) filter.status = status;
+    if (paymentStatus) filter["paymentInfo.status"] = paymentStatus;
+    
+    // Date range filter
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate);
+    }
+    
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get orders with pagination
+    const orders = await Order.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+    
+    // Get total count for pagination
+    const totalOrders = await Order.countDocuments(filter);
+    
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      totalOrders,
+      totalPages: Math.ceil(totalOrders / parseInt(limit)),
+      currentPage: parseInt(page),
+      orders
+    });
+    
   } catch (error) {
     next(error);
   }

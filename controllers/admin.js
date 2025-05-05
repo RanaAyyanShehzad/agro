@@ -1,5 +1,4 @@
-import { farmer } from "../models/farmer.js";
-import { product } from "../models/products.js";
+
 import bcrypt from "bcrypt";
 import { sendCookie } from "../utils/features.js"
 import { sendSMS } from "../utils/sendSMS.js";
@@ -16,6 +15,8 @@ import {
   validateName,
   validateAddress
 } from "../utils/authUtils.js";
+import { admin } from "../models/admin.js";
+
 
 // Controller functions
 export const register = async (req, res, next) => {
@@ -26,11 +27,11 @@ export const register = async (req, res, next) => {
     await validation(next, name, email, password, phone, address);
 
     // Check if user exists
-    let user = await farmer.findOne({ email });
+    let user = await admin.findOne({ email });
     if (user) return next(new ErrorHandler("User already exists", 409));
 
     // Create user with hashed password
-    user = await farmer.create({
+    user = await admin.create({
       name,
       email,
       password: await hashPassword(password),
@@ -43,7 +44,6 @@ export const register = async (req, res, next) => {
       success: true,
       message: "Registered successfully",
     });
-
   } catch (error) {
     next(error);
   }
@@ -53,40 +53,13 @@ export const Login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    let user = await farmer.findOne({ email }).select("+password");
+    let user = await admin.findOne({ email }).select("+password");
     if (!user) return next(new ErrorHandler("Invalid Email or Password", 404));
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return next(new ErrorHandler("Invalid Email or Password", 404));
 
-    sendCookie(user, "farmer", res, `Welcome back, ${user.name}`, 201);
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const getFarmerProfileWithProducts = async (req, res, next) => {
-  try {
-    const { farmerId } = req.params;
-
-    // Find farmer
-    const farmerProfile = await farmer.findById(farmerId).select("-password -otp -otpExpiry");
-
-    if (!farmerProfile) {
-      return next(new ErrorHandler("Farmer not found", 404));
-    }
-
-    // Find products uploaded by this farmer
-    const farmerProducts = await product.find({
-      "upLoadedBy.userID": farmerId,
-      "upLoadedBy.role": "farmer"
-    });
-
-    res.status(200).json({
-      success: true,
-      farmer: farmerProfile,
-      products: farmerProducts
-    });
+    sendCookie(user, "admin", res, `Welcome back, ${user.name}`, 201);
   } catch (error) {
     next(error);
   }
@@ -94,8 +67,8 @@ export const getFarmerProfileWithProducts = async (req, res, next) => {
 
 export const changePassword = async (req, res, next) => {
   try {
-    // Verify farmer role
-    verifyUserRole(req.cookies.token, "farmer", next);
+    // Verify buyer role
+    const decoded = verifyUserRole(req.cookies.token, "admin", next);
 
     const { oldPassword, newPassword } = req.body;
 
@@ -105,7 +78,7 @@ export const changePassword = async (req, res, next) => {
     // Validate new password
     if (!validatePassword(newPassword, next)) return;
 
-    const user = await farmer.findById(req.user._id).select("+password");
+    const user = await admin.findById(decoded._id).select("+password");
 
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) return next(new ErrorHandler("Old password is incorrect", 401));
@@ -122,24 +95,25 @@ export const changePassword = async (req, res, next) => {
   }
 };
 
-export const getMyProfile = (req, res, next) => {
+export const getMyProfile = async (req, res, next) => {
   try {
-    // Verify farmer role
-    verifyUserRole(req.cookies.token, "farmer", next);
-
+    // Verify buyer role
+    const decoded = verifyUserRole(req.cookies.token, "admin", next);
+    const user = await admin.findById(decoded._id);
     res.status(200).json({
       success: true,
-      user: req.user,
+      user,
     });
   } catch (error) {
     // Error is handled in verifyUserRole
   }
 };
 
-export const Logout = (req, res, next) => {
+export const Logout = async (req, res, next) => {
   try {
-    // Verify farmer role
-    verifyUserRole(req.cookies.token, "farmer", next);
+    // Verify buyer role
+    const decoded = verifyUserRole(req.cookies.token, "admin", next);
+    const user = await admin.findById(decoded._id);
 
     res.status(200)
       .cookie("token", "", {
@@ -149,7 +123,7 @@ export const Logout = (req, res, next) => {
       })
       .json({
         success: true,
-        user: req.user,
+        user,
       });
   } catch (error) {
     // Error is handled in verifyUserRole
@@ -158,45 +132,35 @@ export const Logout = (req, res, next) => {
 
 export const deleteProfile = async (req, res, next) => {
   try {
-    // Verify farmer role
-    verifyUserRole(req.cookies.token, "farmer", next);
+    // Verify buyer role
+    const decoded = verifyUserRole(req.cookies.token, "admin", next);
+    let countadmin = await admin.countDocuments({});
 
-    let user = await farmer.findById(req.user._id);
-    if (!user) return next(new ErrorHandler("Delete Failed", 404));
+    if (countadmin > 1) {
+      let user = await admin.findById(decoded._id);
+      if (!user) return next(new ErrorHandler("Delete Failed", 404));
+      await user.deleteOne();
 
-    await user.deleteOne();
+      res.status(200)
+        .clearCookie("token")
+        .json({
+          success: true,
+          message: "Profile deleted successfully",
+        });
+    } else {
+      return next(new ErrorHandler("Can not delete admin, First make someone admin", 403));
+    }
 
-    res.status(200)
-      .clearCookie("token")
-      .json({
-        success: true,
-        message: "Profile deleted successfully",
-      });
   } catch (error) {
     next(error);
   }
 };
-
-export const getAllFarmers = async (req, res, next) => {
-  try {
-    verifyUserRole(req.cookies.token, "admin", next);
-    const farmers = await farmer.find().select("-password"); // exclude password
-
-    res.status(200).json({
-      success: true,
-      farmers,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 export const updateProfile = async (req, res, next) => {
   try {
-    // Verify farmer role
-    verifyUserRole(req.cookies.token, "farmer", next);
+    // Verify buyer role
+    const decoded = verifyUserRole(req.cookies.token, "admin", next);
 
-    const user = await farmer.findById(req.user._id);
+    const user = await admin.findById(decoded._id);
     if (!user) return next(new ErrorHandler("Update Failed", 404));
 
     const { name, email, phone, address, imgURL } = req.body;
@@ -226,7 +190,7 @@ export const updateProfile = async (req, res, next) => {
     }
 
     await user.save();
-    sendCookie(user, "farmer", res, "Updated successfully", 200);
+    sendCookie(user, "admin", res, "Updated successfully", 200);
   } catch (error) {
     next(error);
   }
@@ -242,9 +206,9 @@ export const sendOTP = async (req, res, next) => {
 
     let user;
     if (email) {
-      user = await farmer.findOne({ email });
+      user = await admin.findOne({ email });
     } else {
-      user = await farmer.findOne({ phone });
+      user = await admin.findOne({ phone });
     }
 
     if (!user) return next(new ErrorHandler("User not found", 404));
@@ -280,8 +244,8 @@ export const resetPassword = async (req, res, next) => {
 
     // Find user by email or phone
     const user = email
-      ? await farmer.findOne({ email })
-      : await farmer.findOne({ phone });
+      ? await admin.findOne({ email })
+      : await admin.findOne({ phone });
 
     if (!user) return next(new ErrorHandler("User not found", 404));
 

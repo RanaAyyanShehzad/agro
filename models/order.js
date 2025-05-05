@@ -1,16 +1,20 @@
 import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema({
-  buyerId: {
+  userId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Buyer',
-    required: [true, "Buyer ID is required"]
+    required: [true, "User ID is required"],
+  },
+  userRole: {
+    type: String,
+    required: [true, "User role is required"],
+    enum: ["buyer", "farmer"]
   },
   products: [
     {
       productId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Product',
+        ref: "product",
         required: [true, "Product ID is required"]
       },
       name: {
@@ -24,11 +28,9 @@ const orderSchema = new mongoose.Schema({
       quantity: {
         type: Number,
         required: [true, "Quantity is required"],
-        min: [1, "Minimum quantity should be 1"]
+        min: [1, "Quantity must be at least 1"]
       },
       supplier: {
-        type: Object,
-        required: [true, "Supplier information is required"],
         userID: {
           type: mongoose.Schema.Types.ObjectId,
           required: true
@@ -46,81 +48,84 @@ const orderSchema = new mongoose.Schema({
     required: [true, "Total price is required"],
     min: [0, "Total price cannot be negative"]
   },
+  // Order-specific fields
   status: {
     type: String,
-    enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],
-    default: 'pending'
+    required: true,
+    enum: [
+      "pending", 
+      "processing", 
+      "shipped", 
+      "delivered", 
+      "canceled"
+    ],
+    default: "pending"
+  },
+  paymentInfo: {
+    method: {
+      type: String,
+      required: true,
+      enum: ["easypaisa", "cash-on-delivery", "jazzcash"]
+    },
+    status: {
+      type: String,
+      required: true,
+      enum: ["pending", "completed", "failed", "refunded"],
+      default: "pending"
+    },
+    transactionId: {
+      type: String
+    },
+    paidAt: {
+      type: Date
+    }
   },
   shippingAddress: {
     street: {
       type: String,
-      required: [true, "Street address is required"]
+      required: true
     },
     city: {
       type: String,
-      required: [true, "City is required"]
+      required: true
     },
-    state: {
+    zipCode: {
       type: String,
-      required: [true, "State is required"]
+      required: true
     },
-    postalCode: {
+    phoneNumber: {
       type: String,
-      required: [true, "Postal code is required"]
-    },
-    country: {
-      type: String,
-      default: "Pakistan"
+      required: true
     }
   },
-  paymentMethod: {
-    type: String,
-    enum: ['cash', 'bank transfer', 'credit card', 'mobile payment'],
-    default: 'cash'
+  deliveryInfo: {
+    estimatedDeliveryDate: {
+      type: Date
+    },
+    actualDeliveryDate: {
+      type: Date
+    },
+    notes: {
+      type: String
+    }
   },
-  paymentStatus: {
-    type: String,
-    enum: ['pending', 'paid', 'failed'],
-    default: 'pending'
-  },
-  trackingNumber: {
-    type: String,
-    default: null
-  },
+  // Include order notes for any special instructions
   notes: {
-    type: String,
-    trim: true
+    type: String
+  },
+  // Reference to original cart
+  cartId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Cart"
   }
 }, {
   timestamps: true
 });
 
-// Indexing for better query performance
-orderSchema.index({ buyerId: 1 });
+// Create indexes for frequent queries
+orderSchema.index({ userId: 1 });
 orderSchema.index({ status: 1 });
-orderSchema.index({ createdAt: -1 });
+orderSchema.index({ "paymentInfo.status": 1 });
 orderSchema.index({ "products.supplier.userID": 1 });
-
-// Virtual to populate buyer information
-orderSchema.virtual('buyer', {
-  ref: 'Buyer',
-  localField: 'buyerId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Generate a tracking number pre-save
-orderSchema.pre('save', function(next) {
-  if (this.isNew) {
-    const timestamp = new Date().getTime().toString().slice(-8);
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    this.trackingNumber = `FC-${timestamp}-${random}`;
-  }
-  next();
-});
-
-// Ensure virtuals are included in JSON output
-orderSchema.set('toJSON', { virtuals: true });
-orderSchema.set('toObject', { virtuals: true });
 
 export const Order = mongoose.model("Order", orderSchema);
