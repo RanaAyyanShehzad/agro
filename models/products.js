@@ -35,6 +35,9 @@ const schema = mongoose.Schema({
         type:Number,
         required:true,
         min:0,
+    },images:{
+        type:[String],
+        required:true,
     },
     upLoadedBy:{
        type:uploadeerschema,

@@ -29,6 +29,9 @@ const orderSchema = new mongoose.Schema({
         type: Number,
         required: [true, "Quantity is required"],
         min: [1, "Quantity must be at least 1"]
+      },images:{
+        type:[String],
+        required:true
       },
       supplier: {
         userID: {

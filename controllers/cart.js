@@ -35,7 +35,7 @@ export const addToCart = async (req, res, next) => {
     const upLoaderName = productDoc.upLoadedBy.name;
     const name = productDoc.name;
     const price = productDoc.price;
-    
+    const images=productDoc.images || [];
     if (decoded.role === "farmer" && 
         uploaderId.toString() === req.user._id.toString() && 
         uploaderRole === "farmer") {
@@ -56,6 +56,7 @@ export const addToCart = async (req, res, next) => {
           name,
           price, 
           quantity,
+          images,
           supplier: {
             userID: uploaderId,
             role: uploaderRole,
@@ -95,6 +96,7 @@ export const addToCart = async (req, res, next) => {
           name: productDoc.name,
           price: productDoc.price,
           quantity,
+          images,
           supplier: {
             userID: uploaderId,
             role: uploaderRole,

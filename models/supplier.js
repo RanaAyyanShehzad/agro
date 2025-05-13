@@ -26,6 +26,9 @@ const schema = new mongoose.Schema({
         required: true,
       },img:{
         type:String,
+      },verified:{
+        type:Boolean,
+        default:false,
       },
       otp: {
         type: String,
@@ -34,6 +37,11 @@ const schema = new mongoose.Schema({
       otpExpiry: {
         type: Date,
         default: null,
+      },failedLoginAtempt:{
+        type:Number,
+        default:0,
+      },lockUntil:{
+        type:Date,
       },
       },{
         timestamps:true,

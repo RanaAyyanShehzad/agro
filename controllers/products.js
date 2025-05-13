@@ -24,19 +24,29 @@ const getUploader = async (userId, role) => {
     }
 };
 
-// Add product
 export const addProduct = async (req, res, next) => {
     try {
-        const { name, description, price, unit, quantity } = req.body;
+        const { name, description, price, unit, quantity, images } = req.body;
         const { userId, role } = getUserAndRole(req);
 
-        if (!name?.trim() || !description?.trim() || !unit?.trim() || price == null || quantity == null) {
-            return next(new ErrorHandler("All fields are required", 400));
+        if (
+            !name?.trim() ||
+            !description?.trim() ||
+            !unit?.trim() ||
+            price == null ||
+            quantity == null ||
+            !images ||
+            !Array.isArray(images) ||
+            images.length === 0
+        ) {
+            return next(new ErrorHandler("All fields including images are required", 400));
         }
+
         const nameRegex = /^[a-zA-Z\s-]+$/;
         if (!nameRegex.test(name)) {
             return next(new ErrorHandler("Name can only contain letters, spaces, and hyphens.", 400));
         }
+
         const uploader = await getUploader(userId, role);
         const uploaderName = uploader.name;
         const isAvailable = quantity > 0;
@@ -48,6 +58,7 @@ export const addProduct = async (req, res, next) => {
             unit,
             quantity,
             isAvailable,
+            images, // 👈 save image URLs
             upLoadedBy: {
                 userID: userId,
                 role,
@@ -114,7 +125,7 @@ export const deleteProduct = async (req, res, next) => {
         if (!productToDelete) return next(new ErrorHandler("Product not found", 404));
 
         const isUploader = productToDelete.upLoadedBy.userID.toString() === userId.toString() &&
-                           productToDelete.upLoadedBy.role === role;
+            productToDelete.upLoadedBy.role === role;
         if (!isUploader) {
             return next(new ErrorHandler("You are not allowed to delete this product", 403));
         }
@@ -131,18 +142,21 @@ export const updateProduct = async (req, res, next) => {
     try {
         const { userId, role } = getUserAndRole(req);
         const productId = req.params.id;
-        const { name, description, price, unit, quantity } = req.body;
+        const { name, description, price, unit, quantity, images } = req.body;
 
         const productToUpdate = await product.findById(productId);
         if (!productToUpdate) return next(new ErrorHandler("Product not found", 404));
 
         const isUploader = productToUpdate.upLoadedBy.userID.toString() === userId.toString() &&
-                           productToUpdate.upLoadedBy.role === role;
+            productToUpdate.upLoadedBy.role === role;
         if (!isUploader) {
             return next(new ErrorHandler("You are not allowed to update this product", 403));
         }
 
-        if (!name?.trim() || !description?.trim() || !unit?.trim() || price == null || quantity == null) {
+        if (!name?.trim() || !description?.trim() || !unit?.trim() || price == null ||
+            quantity == null || !images ||
+            !Array.isArray(images) ||
+            images.length === 0) {
             return next(new ErrorHandler("All fields are required", 400));
         }
 
@@ -152,6 +166,7 @@ export const updateProduct = async (req, res, next) => {
             price,
             unit,
             quantity,
+            images,
             isAvailable: quantity > 0,
         });
 

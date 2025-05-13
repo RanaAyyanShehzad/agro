@@ -11,11 +11,11 @@ export const setupCartCleanupJob = () => {
         expiresAt: { $lt: new Date() }
       });
       
-      console.log(`Deleted ${result.deletedCount} expired carts`);
+     
     } catch (error) {
-      console.error('Error in cart cleanup job:', error);
+      
     }
   });
   
-  console.log('Cart cleanup job scheduled');
+  
 };

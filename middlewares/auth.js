@@ -3,6 +3,8 @@ import { farmer } from "../models/farmer.js"
 import ErrorHandler from "./error.js";
 import { buyer } from "../models/buyer.js";
 import { supplier } from "../models/supplier.js";
+import { AwsInstance } from "twilio/lib/rest/accounts/v1/credential/aws.js";
+import { admin } from "../models/admin.js";
 export const isAuthenticated = async (req, res, next) => {
     try {
         const { token } = req.cookies;
@@ -15,7 +17,9 @@ export const isAuthenticated = async (req, res, next) => {
             req.user = await buyer.findById(decoded._id);
         }else if(role=="supplier"){
             req.user = await supplier.findById(decoded._id);
-        }
+        }else if(role=="admin"){
+            req.user= await admin.findById(decoded._id);
+        } 
         
         next();
     } catch (error) {

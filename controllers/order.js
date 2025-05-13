@@ -2,7 +2,10 @@ import { Order } from '../models/order.js';
 import { Cart } from '../models/cart.js';
 import jwt from "jsonwebtoken";
 import ErrorHandler from '../middlewares/error.js';
-
+import { buyer } from '../models/buyer.js';
+import { farmer } from '../models/farmer.js';
+import {sendEmail} from "../utils/sendEmail.js";
+import { supplier } from '../models/supplier.js';
 const getRole = (req) => {
     const { token } = req.cookies;
     if (!token) throw new ErrorHandler("Authentication token missing", 401);
@@ -11,26 +14,32 @@ const getRole = (req) => {
 };
 
 // Create a new order from cart
-export const createOrder = async (req, res,next) => {
+export const createOrder = async (req, res, next) => {
   try {
-    const { cartId, paymentMethod, street, city, zipCode, phoneNumber,notes } = req.body;
-    const userId = req.user.id; // Assuming user ID comes from auth middleware
-    const decode = getRole(req);
-    // Find the cart and make sure it belongs to the user
-    const cart = await Cart.findOne({ 
-      _id: cartId, 
-      userId: userId 
-    });
+    const { cartId, paymentMethod, street, city, zipCode, phoneNumber, notes } = req.body;
+    const userId = req.user.id; // Comes from auth middleware
+    const decode = getRole(req).role;
+
+    // 1. Fetch Cart
+    const cart = await Cart.findOne({ _id: cartId, userId: userId });
 
     if (!cart) {
-      return next(new ErrorHandler("Cart not found or doesn't belong to you",404));
+      return next(new ErrorHandler("Cart not found or doesn't belong to you", 404));
     }
 
     if (cart.products.length === 0) {
-      return next(new ErrorHandler("Cannot create order with empty cart",400));
+      return next(new ErrorHandler("Cannot create order with empty cart", 400));
     }
 
-    // Create new order from cart data
+    // 2. Fetch User Info
+    let user;
+    if (decode === "buyer") {
+      user = await buyer.findById(userId);
+    } else if (decode === "farmer") {
+      user = await farmer.findById(userId);
+    }
+
+    // 3. Prepare Order Data
     const orderData = {
       userId: cart.userId,
       userRole: cart.userRole,
@@ -52,34 +61,64 @@ export const createOrder = async (req, res,next) => {
 
     let savedOrder = null;
     let cartDeleted = false;
-    
+
     try {
-      // Step 1: Create order
+      // Step 4: Save Order
       const order = new Order(orderData);
       savedOrder = await order.save();
-      
-      // Step 2: Delete cart
+
+      // Step 5: Notify Supplier/Farmer
+      const uniqueSuppliers = new Map();
+
+      for (const product of cart.products) {
+        const { userID, role } = product.supplier;
+        const key = `${role}_${userID.toString()}`;
+
+        if (!uniqueSuppliers.has(key)) {
+          let supplierUser = null;
+
+          if (role === "supplier") {
+            supplierUser = await supplier.findById(userID);
+          } else if (role === "farmer") {
+            supplierUser = await farmer.findById(userID);
+          }
+
+          if (supplierUser?.email) {
+            uniqueSuppliers.set(key, supplierUser.email);
+          }
+        }
+      }
+
+      for (const [_, email] of uniqueSuppliers) {
+        await sendEmail(email, "New Order Received", "Your product(s) were ordered. Check your dashboard.");
+      }
+
+      // Step 6: Delete Cart
       await Cart.findByIdAndDelete(cartId);
       cartDeleted = true;
-      
+
+      // Step 7: Send Email to Buyer/Farmer
+      await sendEmail(user.email, "Order Placed", "Your order has been successfully placed.");
+
       return res.status(201).json({
         success: true,
         message: "Order created successfully",
         order: savedOrder
       });
+
     } catch (innerError) {
-      // Manual rollback if needed
+      // Rollback if needed
       if (savedOrder && !cartDeleted) {
-        // Order created but cart not deleted, remove the order
         await Order.findByIdAndDelete(savedOrder._id);
       }
-      throw innerError; // Re-throw to be caught by outer catch
+      throw innerError;
     }
 
   } catch (error) {
     next(error);
   }
 };
+
 
 // Get all orders for a user
 export const getUserOrders = async (req, res,next) => {
@@ -255,25 +294,38 @@ export const cancelOrder = async (req, res,next) => {
 };
 
 // Get orders for a specific supplier (farmer/supplier only)
-export const getSupplierOrders = async (req, res,next) => {
+export const getSupplierOrders = async (req, res, next) => {
   try {
-    const supplierId = req.user.id; // Assuming supplier ID comes from auth middleware
-    
-    // Find orders containing products from this supplier
+    const supplierId = req.user.id;
+
+    // Step 1: Find all orders where any product belongs to this supplier
     const orders = await Order.find({
       "products.supplier.userID": supplierId
-    }).sort({ createdAt: -1 }); // Sort by newest first
-    
+    }).sort({ createdAt: -1 });
+
+    // Step 2: Filter products inside each order
+    const filteredOrders = orders.map(order => {
+      const supplierProducts = order.products.filter(
+        p => p.supplier.userID.toString() === supplierId
+      );
+
+      return {
+        ...order.toObject(), // convert Mongoose doc to plain object
+        products: supplierProducts
+      };
+    });
+
     return res.status(200).json({
       success: true,
-      count: orders.length,
-      orders
+      count: filteredOrders.length,
+      orders: filteredOrders
     });
-    
+
   } catch (error) {
     next(error);
   }
 };
+
 
 // Admin: Get all orders with filtering options
 export const getAllOrders = async (req, res,next) => {
