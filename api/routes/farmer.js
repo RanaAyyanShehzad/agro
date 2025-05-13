@@ -2,9 +2,9 @@ import express from "express";
 import { register,Login,getMyProfile,Logout, updateProfile, 
     deleteProfile,getAllFarmers, changePassword, sendOTP,
     resetPassword, getFarmerProfileWithProducts, verifyOtp, 
-    resendOTP} from "../controllers/farmer.js";
-import { isAuthenticated } from "../middlewares/auth.js";
-import { deleteUnverifiedUsers } from "../middlewares/deleteUnverifiedUsers.js";
+    resendOTP} from "../../controllers/farmer.js";
+import { isAuthenticated } from "../../middlewares/auth.js";
+import { deleteUnverifiedUsers } from "../../middlewares/deleteUnverifiedUsers.js";
 
 const router = express.Router();
 

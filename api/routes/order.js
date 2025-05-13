@@ -1,6 +1,6 @@
 import express from "express"
-import { isAuthenticated } from "../middlewares/auth.js"
-import { cancelOrder, createOrder, getAllOrders, getOrderById, getSupplierOrders, getUserOrders, updateOrderStatus } from "../controllers/order.js";
+import { isAuthenticated } from "../../middlewares/auth.js"
+import { cancelOrder, createOrder, getAllOrders, getOrderById, getSupplierOrders, getUserOrders, updateOrderStatus } from "../../controllers/order.js";
 const router=express.Router();
 router.use(isAuthenticated);
 router.post('/place-order',createOrder);
