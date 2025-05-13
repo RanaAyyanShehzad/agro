@@ -15,17 +15,17 @@ import { errorMiddleware } from "../middlewares/error.js";
 import { connectDB } from "../data/database.js";
 import { setupCartCleanupJob } from '../jobs/cartCleanup.js';
 
-connectDB(); 
-setupCartCleanupJob();
+
 // Initialize Express app
 const app = express();
 
 // Load environment variables
 config({
-    path: "./data/config.env",
+    path: "../data/config.env",
 });
+ 
 connectDB(); 
-
+setupCartCleanupJob();
 // Middlewares
 app.use(express.json());
 app.use(cookieParser());

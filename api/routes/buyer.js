@@ -1,9 +1,9 @@
 import express from "express";
 import { register,Login,getMyProfile,Logout, updateProfile,
      deleteProfile, changePassword, sendOTP, resetPassword,
-      getAllBuyers, verifyOtp, resendOTP } from "../controllers/buyer.js";
-import { isAuthenticated } from "../middlewares/auth.js";
-import { deleteUnverifiedUsers } from "../middlewares/deleteUnverifiedUsers.js";
+      getAllBuyers, verifyOtp, resendOTP } from "../../controllers/buyer.js";
+import { isAuthenticated } from "../../middlewares/auth.js";
+import { deleteUnverifiedUsers } from "../../middlewares/deleteUnverifiedUsers.js";
 
 const router = express.Router();
 
