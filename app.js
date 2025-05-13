@@ -11,10 +11,11 @@ import cors from "cors";
 import {config} from "dotenv";
 import cookieParser from "cookie-parser";
 import { errorMiddleware } from "./middlewares/error.js";
+import Serverless from "serverless-http";
 
 
 
-export const app= express();
+ const app= express();
 
 config({
     path:"./data/config.env",
@@ -40,3 +41,5 @@ app.use("/api/cart",cartRoutes);
 app.use("/api/wishlist",wishlistRoutes);
 //error handling
 app.use(errorMiddleware);
+export const handler = Serverless(app);
+export default app;
