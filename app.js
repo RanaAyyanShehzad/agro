@@ -12,7 +12,11 @@ import { config } from "dotenv";
 import cookieParser from "cookie-parser";
 import { errorMiddleware } from "./middlewares/error.js";
 import Serverless from "serverless-http";
+import { connectDB } from "./data/database.js";
+import { setupCartCleanupJob } from './jobs/cartCleanup.js';
 
+connectDB(); 
+setupCartCleanupJob();
 // Initialize Express app
 const app = express();
 
@@ -20,6 +24,7 @@ const app = express();
 config({
     path: "./data/config.env",
 });
+connectDB(); 
 
 // Middlewares
 app.use(express.json());
