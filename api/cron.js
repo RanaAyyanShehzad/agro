@@ -1,5 +1,5 @@
   // api/cron.js
-  import { setupCartCleanupJob } from './jobs/cartCleanup.js';
+  import { setupCartCleanupJob } from '../jobs/cartCleanup.js';
 
   export default function handler(req, res) {
     setupCartCleanupJob();

@@ -1,19 +1,19 @@
 import express from "express";
-import adminRoutes from "./routes/admin.js";
-import farmerRoutes from "./routes/farmer.js";
-import orderRoutes from "./routes/order.js";
-import buyerRoutes from "./routes/buyer.js";
-import supplierRoutes from "./routes/supplier.js";
-import productRoutes from "./routes/product.js";
-import cartRoutes from "./routes/cart.js";
-import wishlistRoutes from "./routes/wishlist.js";
+import adminRoutes from "../routes/admin.js";
+import farmerRoutes from "../routes/farmer.js";
+import orderRoutes from "../routes/order.js";
+import buyerRoutes from "../routes/buyer.js";
+import supplierRoutes from "../routes/supplier.js";
+import productRoutes from "../routes/product.js";
+import cartRoutes from "../routes/cart.js";
+import wishlistRoutes from "../routes/wishlist.js";
 import cors from "cors";
 import { config } from "dotenv";
 import cookieParser from "cookie-parser";
-import { errorMiddleware } from "./middlewares/error.js";
-import Serverless from "serverless-http";
-import { connectDB } from "./data/database.js";
-import { setupCartCleanupJob } from './jobs/cartCleanup.js';
+import { errorMiddleware } from "../middlewares/error.js";
+
+import { connectDB } from "../data/database.js";
+import { setupCartCleanupJob } from '../jobs/cartCleanup.js';
 
 connectDB(); 
 setupCartCleanupJob();
@@ -37,6 +37,10 @@ app.use(cors({
 }));
 
 // Routes
+app.get('/', (req, res) => {
+  res.send('Welcome to the Agro Backend API');
+});
+
 app.use('/api/v1/admin', adminRoutes);
 app.use("/api/farmers", farmerRoutes);
 app.use("/api/buyers", buyerRoutes);
@@ -50,5 +54,5 @@ app.use("/api/wishlist", wishlistRoutes);
 app.use(errorMiddleware);
 
 // Export the handler for serverless environment
-export const handler = Serverless(app);
+
 export default app;

@@ -1,6 +1,6 @@
 import express from "express";
 
-import { app } from "./app.js";
+import { app } from "./api/app.js";
 import { connectDB } from "./data/database.js";
 import { setupCartCleanupJob } from './jobs/cartCleanup.js';
 
