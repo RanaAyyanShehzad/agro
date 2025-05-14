@@ -29,15 +29,26 @@ config({
 app.use(express.json());
 app.use(cookieParser());
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+let allowedOrigins = process.env.ALLOWED_ORIGINS;
+
+if (allowedOrigins) {
+  allowedOrigins = allowedOrigins.split(',');
+} else {
+  allowedOrigins = ['http://localhost:3000']; // or your default origin(s)
+}
+
 app.use(cors({
-  origin: allowedOrigins.length > 0 ? allowedOrigins : '*',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
-// Handle preflight requests
-app.options('*', cors());
+
 // Routes
 app.get('/', (req, res) => {
   res.send('Welcome to the Agro Backend API');
