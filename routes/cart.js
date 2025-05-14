@@ -7,9 +7,9 @@ import {
   updateCartItem,
   getCartSummary,
   getCartExpiration
-} from '../../controllers/cart.js';
-import { isAuthenticated } from '../../middlewares/auth.js';
-import { checkCartExpiration } from '../../middlewares/cartExpire.js';
+} from '../controllers/cart.js';
+import { isAuthenticated } from '../middlewares/auth.js';
+import { checkCartExpiration } from '../middlewares/cartExpire.js';
 
 const router = express.Router();
 

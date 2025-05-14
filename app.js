@@ -10,22 +10,21 @@ import wishlistRoutes from "./routes/wishlist.js";
 import cors from "cors";
 import { config } from "dotenv";
 import cookieParser from "cookie-parser";
-import { errorMiddleware } from "../middlewares/error.js";
+import { errorMiddleware } from "./middlewares/error.js";
 
-import { connectDB } from "../data/database.js";
-import { setupCartCleanupJob } from '../jobs/cartCleanup.js';
+import { connectDB } from "./data/database.js";
+import { setupCartCleanupJob } from './jobs/cartCleanup.js';
 
 
 // Initialize Express app
-const app = express();
+export const app = express();
 
 // Load environment variables
 config({
-    path: "../data/config.env",
+    path: "./data/config.env",
 });
  
-connectDB(); 
-setupCartCleanupJob();
+
 // Middlewares
 app.use(express.json());
 app.use(cookieParser());
@@ -55,4 +54,3 @@ app.use(errorMiddleware);
 
 // Export the handler for serverless environment
 
-export default app;

@@ -1,6 +1,6 @@
 import express from "express";
-import { isAuthenticated } from "../../middlewares/auth.js";
-import { addProduct, deleteProduct, getAllProducts, getAllProductsForFarmer, getMyProduct, updateProduct } from "../../controllers/products.js";
+import { isAuthenticated } from "../middlewares/auth.js";
+import { addProduct, deleteProduct, getAllProducts, getAllProductsForFarmer, getMyProduct, updateProduct } from "../controllers/products.js";
 
 const router=express.Router();
 

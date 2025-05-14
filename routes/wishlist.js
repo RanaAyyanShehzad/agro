@@ -3,8 +3,8 @@ import {
     addToWishlist,
     getWishlist,removeFromWishlist,clearWishlist,
     moveToCart
-} from '../../controllers/wishlist.js';
-import { isAuthenticated } from '../../middlewares/auth.js';
+} from '../controllers/wishlist.js';
+import { isAuthenticated } from '../middlewares/auth.js';
 
 const router = express.Router();
 
