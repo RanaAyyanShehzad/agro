@@ -29,12 +29,15 @@ config({
 app.use(express.json());
 app.use(cookieParser());
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['*'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
 app.use(cors({
-  origin: "*",
-  credentials: true
+  origin: allowedOrigins.length > 0 ? allowedOrigins : '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
+// Handle preflight requests
+app.options('*', cors());
 // Routes
 app.get('/', (req, res) => {
   res.send('Welcome to the Agro Backend API');
