@@ -25,11 +25,15 @@ export const register = async (req, res, next) => {
 
     // Use the validation function
     await validation(next, name, email, password, phone, address);
+    // Check if user exists
+    let user = await supplier.findOne({ email });
+    if (user) return next(new ErrorHandler("User already exists", 409));
 
     // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit
     const otpExpiry = new Date(Date.now() + 30 * 60 * 1000); // 10 minutes from now
     // Create user with hashed password
+
     user = await farmer.create({
       name,
       email,
