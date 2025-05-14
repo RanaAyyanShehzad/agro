@@ -156,6 +156,7 @@ export const Login = async (req, res, next) => {
     }
     user.failedLoginAtempt = 0;
     user.lockUntil = undefined;
+    await user.save();
     await sendEmail(email, "Login successfully", `Welcome back, ${user.name}!, We're thrilled to have you again`);
     sendCookie(user, "supplier", res, `Welcome back, ${user.name}`, 201);
   } catch (error) {
@@ -230,10 +231,11 @@ export const getMyProfile = (req, res, next) => {
   try {
     // Verify supplier role
     verifyUserRole(req.cookies.token, "supplier", next);
+    const { name, email, phone, address ,imgurl} = req.user;
 
     res.status(200).json({
       success: true,
-      user: req.user,
+      user: { name, email, phone, address,imgurl },
     });
   } catch (error) {
     // Error is handled in verifyUserRole
