@@ -26,7 +26,7 @@ export const register = async (req, res, next) => {
     // Use the validation function
     await validation(next, name, email, password, phone, address);
     // Check if user exists
-    let user = await supplier.findOne({ email });
+    let user = await farmer.findOne({ email });
     if (user) return next(new ErrorHandler("User already exists", 409));
 
     // Generate OTP
