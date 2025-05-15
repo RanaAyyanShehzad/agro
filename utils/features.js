@@ -8,18 +8,19 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
   );
 
   res
-    .status(statusCode)
-    .cookie("token", token, {
-      httpOnly: true,
-      maxAge: 10 * 60 * 1000,
-      sameSite: process.env.NODE_ENV === 'Development' ? "Lax" : "none",
-      secure: process.env.NODE_ENV === 'Development' ? false : true,
-    })
-    .json({
-      success: true,
-      message,
-      token // Also send token in response body
-    });
+  .status(statusCode)
+  .cookie("token", token, {
+    httpOnly: true,
+    maxAge: 10 * 60 * 1000,
+    sameSite: process.env.NODE_ENV === "Development" ? "Lax" : "None", // 🔥 "None" is required for cross-origin
+    secure: process.env.NODE_ENV === "Development" ? false : true,     // 🔥 Must be true when using https
+  })
+  .json({
+    success: true,
+    message,
+    token,
+  });
+
 };
 export const successMessage=(res,message,statusCode=200)=>{
     res.status(statusCode).json({
