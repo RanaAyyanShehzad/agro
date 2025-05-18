@@ -21,7 +21,7 @@ router.use(checkCartExpiration); // depends on req.user
 // Cart routes
 router.post('/add', addToCart);
 router.get('/my-cart', getCart);
-router.delete('/item/:productId', removeFromCart);
+router.delete('/item/:id', removeFromCart);
 router.delete('/clear', clearCart);
 router.put('/update', updateCartItem);
 router.get('/summary', getCartSummary);

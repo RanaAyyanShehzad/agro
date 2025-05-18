@@ -169,7 +169,7 @@ export const getCart = async (req, res, next) => {
 // Remove an item from cart
 export const removeFromCart = async (req, res, next) => {
   try {
-    const { productId } = req.params;
+    const { id } = req.params;
     const cart = await Cart.findOne({ userId: req.user._id });
     
     if (!cart) {
@@ -178,7 +178,7 @@ export const removeFromCart = async (req, res, next) => {
 
     // Check if item exists in cart
     const itemIndex = cart.products.findIndex(
-      item => item.productId.toString() === productId
+      item => item._id.toString() === id
     );
 
     if (itemIndex === -1) {
