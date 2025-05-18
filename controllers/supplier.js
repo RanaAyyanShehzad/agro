@@ -21,7 +21,7 @@ import {
 // Controller functions
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, phone, address, imgURL } = req.body;
+    const { name, email, password, phone, address, img } = req.body;
 
     // Use the validation function
     await validation(next, name, email, password, phone, address);
@@ -39,7 +39,7 @@ export const register = async (req, res, next) => {
       password: await hashPassword(password),
       phone,
       address,
-      img: imgURL,
+      img: img,
       verified: false,
       otp,
       otpExpiry
@@ -233,11 +233,11 @@ export const getMyProfile = (req, res, next) => {
   try {
     // Verify supplier role
     verifyUserRole(req.cookies.token, "supplier", next);
-    const { name, email, phone, address, imgurl } = req.user;
+    const { name, email, phone, address, img } = req.user;
 
     res.status(200).json({
       success: true,
-      user: { name, email, phone, address, imgurl },
+      user: { name, email, phone, address, img },
     });
   } catch (error) {
     // Error is handled in verifyUserRole
@@ -308,7 +308,7 @@ export const updateProfile = async (req, res, next) => {
     const user = await supplier.findById(req.user._id);
     if (!user) return next(new ErrorHandler("Update Failed", 404));
 
-    const { name, email, phone, address, imgURL } = req.body;
+    const { name, email, phone, address, img } = req.body;
 
     // Use simplified validation from common utils
     if (name) {
@@ -330,8 +330,8 @@ export const updateProfile = async (req, res, next) => {
       if (!validateAddress(address, next)) return;
       user.address = address;
     }
-    if (imgURL) {
-      user.img = imgURL;
+    if (img) {
+      user.img = img;
     }
 
     await user.save();
