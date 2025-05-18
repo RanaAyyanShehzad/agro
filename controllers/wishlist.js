@@ -233,6 +233,7 @@ export const moveToCart = async (req, res, next) => {
           name: productDoc.name,
           price: productDoc.price,
           quantity,
+          images:productDoc.images,
           supplier: {
             userID: productDoc.upLoadedBy.userID,
             role: productDoc.upLoadedBy.role,
