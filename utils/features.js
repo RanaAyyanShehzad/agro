@@ -4,7 +4,7 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
   const token = jwt.sign(
     { _id: user._id, role },
     process.env.JWT_SECRET,
-    { expiresIn: "10m" }
+    { expiresIn: "60m" }
   );
 
   res
