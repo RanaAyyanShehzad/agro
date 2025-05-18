@@ -178,7 +178,7 @@ export const removeFromCart = async (req, res, next) => {
 
     // Check if item exists in cart
     const itemIndex = cart.products.findIndex(
-      item => item.productId.toString() === productId
+      item => item.productId === productId
     );
 
     if (itemIndex === -1) {
