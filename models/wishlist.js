@@ -15,7 +15,7 @@ const wishlistSchema = new mongoose.Schema({
     {
       productId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "product", // Reference to product model
+        ref: "products", // Reference to product model
         required: [true, "Product ID is required"]
       },
       addedAt: {
