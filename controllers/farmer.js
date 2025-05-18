@@ -209,7 +209,7 @@ export const changePassword = async (req, res, next) => {
 
     if (!oldPassword || !newPassword)
       return next(new ErrorHandler("Please fill all fields", 400));
-
+  
     // Validate new password
     if (!validatePassword(newPassword, next)) return;
 
@@ -217,7 +217,10 @@ export const changePassword = async (req, res, next) => {
 
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) return next(new ErrorHandler("Old password is incorrect", 401));
-
+    
+    
+    const samePass =await bcrypt.compare(newPassword,user.password);
+    if(samePass) return next(new ErrorHandler("New password must be different from the old password", 400));
     user.password = await hashPassword(newPassword);
     await user.save();
     await sendEmail(user.email, "Password changed successfully",
@@ -340,7 +343,7 @@ export const updateProfile = async (req, res, next) => {
     if (imgURL) {
       user.img = imgURL;
     }
-
+    
     await user.save();
     await sendEmail(email, "Profile updated successfully", `${name}, your profile has been updated successfully`);
     sendCookie(user, "farmer", res, "Updated successfully", 200);

@@ -26,7 +26,7 @@ const getUploader = async (userId, role) => {
 
 export const addProduct = async (req, res, next) => {
     try {
-        const { name, description, price, unit, quantity, images } = req.body;
+        const { name, description, price, unit, quantity,category, images } = req.body;
         const { userId, role } = getUserAndRole(req);
 
         if (
@@ -34,7 +34,7 @@ export const addProduct = async (req, res, next) => {
             !description?.trim() ||
             !unit?.trim() ||
             price == null ||
-            quantity == null ||
+            quantity == null || !category?.trim() ||
             !images ||
             !Array.isArray(images) ||
             images.length === 0
@@ -57,6 +57,7 @@ export const addProduct = async (req, res, next) => {
             price,
             unit,
             quantity,
+            category,
             isAvailable,
             images, // 👈 save image URLs
             upLoadedBy: {
@@ -142,7 +143,7 @@ export const updateProduct = async (req, res, next) => {
     try {
         const { userId, role } = getUserAndRole(req);
         const productId = req.params.id;
-        const { name, description, price, unit, quantity, images } = req.body;
+        const { name, description, price, unit, quantity,category, images } = req.body;
 
         const productToUpdate = await product.findById(productId);
         if (!productToUpdate) return next(new ErrorHandler("Product not found", 404));
@@ -154,7 +155,7 @@ export const updateProduct = async (req, res, next) => {
         }
 
         if (!name?.trim() || !description?.trim() || !unit?.trim() || price == null ||
-            quantity == null || !images ||
+            quantity == null || !images || !category?.trim()||
             !Array.isArray(images) ||
             images.length === 0) {
             return next(new ErrorHandler("All fields are required", 400));
@@ -166,8 +167,10 @@ export const updateProduct = async (req, res, next) => {
             price,
             unit,
             quantity,
-            images,
+            category,
             isAvailable: quantity > 0,
+            images,
+            
         });
 
         await productToUpdate.save();

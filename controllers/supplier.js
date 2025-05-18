@@ -29,7 +29,7 @@ export const register = async (req, res, next) => {
     // Check if user exists
     let user = await supplier.findOne({ email });
     if (user) return next(new ErrorHandler("User already exists", 409));
-     // Generate OTP
+    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit
     const otpExpiry = new Date(Date.now() + 30 * 60 * 1000); // 10 minutes from now
     // Create user with hashed password
@@ -40,10 +40,10 @@ export const register = async (req, res, next) => {
       phone,
       address,
       img: imgURL,
-      verified:false,
+      verified: false,
       otp,
       otpExpiry
-      
+
     });
     await sendEmail(
       email,
@@ -61,11 +61,11 @@ export const register = async (req, res, next) => {
 export const verifyOtp = async (req, res, next) => {
   try {
     const { email, otp } = req.body;
-    if(!email){
-      return next(new ErrorHandler("Please provide email",404));
+    if (!email) {
+      return next(new ErrorHandler("Please provide email", 404));
     }
-    if(!otp){
-       return next(new ErrorHandler("Please provide 6-Digit code",404));
+    if (!otp) {
+      return next(new ErrorHandler("Please provide 6-Digit code", 404));
     }
     const user = await supplier.findOne({ email });
 
@@ -88,7 +88,7 @@ export const verifyOtp = async (req, res, next) => {
     next(error);
   }
 };
-export const resendOTP = async (req, res,next) => {
+export const resendOTP = async (req, res, next) => {
   try {
     const { email } = req.body;
 
@@ -129,14 +129,14 @@ export const resendOTP = async (req, res,next) => {
 export const Login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    if(!email){
-      return next(new ErrorHandler("Please provide email",404));
+    if (!email) {
+      return next(new ErrorHandler("Please provide email", 404));
     }
-    if(!password){
-       return next(new ErrorHandler("Please provide password",404));
+    if (!password) {
+      return next(new ErrorHandler("Please provide password", 404));
     }
     let user = await supplier.findOne({ email }).select("+password");
-    if(!user){return next(new ErrorHandler("User not found",404))};
+    if (!user) { return next(new ErrorHandler("User not found", 404)) };
     if (!user.verified) {
       return next(new ErrorHandler("Please verify your account first", 403));
     }
@@ -170,10 +170,10 @@ export const getSupplierProfileWithProducts = async (req, res, next) => {
 
     // Find supplier
     const supplierProfile = await supplier.findOne({
-          _id:farmerId,
-          verified:true
-    
-        }).select("-password -otp -otpExpiry -failedLoginAtempt -lockUntil -createdAt -updatedAt");
+      _id: farmerId,
+      verified: true
+
+    }).select("-password -otp -otpExpiry -failedLoginAtempt -lockUntil -createdAt -updatedAt");
 
     if (!supplierProfile) {
       return next(new ErrorHandler("supplier not found", 404));
@@ -213,6 +213,8 @@ export const changePassword = async (req, res, next) => {
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) return next(new ErrorHandler("Old password is incorrect", 401));
 
+    const samePass = await bcrypt.compare(newPassword, user.password);
+    if (samePass) return next(new ErrorHandler("New password must be different from the old password", 400));
     user.password = await hashPassword(newPassword);
     await user.save();
     await sendEmail(user.email, "Password changed successfully",
@@ -231,11 +233,11 @@ export const getMyProfile = (req, res, next) => {
   try {
     // Verify supplier role
     verifyUserRole(req.cookies.token, "supplier", next);
-    const { name, email, phone, address ,imgurl} = req.user;
+    const { name, email, phone, address, imgurl } = req.user;
 
     res.status(200).json({
       success: true,
-      user: { name, email, phone, address,imgurl },
+      user: { name, email, phone, address, imgurl },
     });
   } catch (error) {
     // Error is handled in verifyUserRole

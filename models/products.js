@@ -35,6 +35,12 @@ const schema = mongoose.Schema({
         type:Number,
         required:true,
         min:0,
+    },category:{
+        type:String,
+        trim:true,
+    },isAvailable:{
+        type:Boolean,
+        default:true,
     },images:{
         type:[String],
         required:true,
@@ -43,9 +49,6 @@ const schema = mongoose.Schema({
        type:uploadeerschema,
        required:true,  
     },
-    isAvailable:{
-        type:Boolean,
-        default:true,
-    },
+    
 });
 export const product=mongoose.model("Products",schema);
