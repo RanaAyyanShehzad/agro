@@ -15,116 +15,76 @@ export const addToCart = async (req, res, next) => {
     }
 
     const productDoc = await product.findById(productId);
-    if (!productDoc) {
-      return next(new ErrorHandler("Product not found", 404));
-    }
-
-    if (!productDoc.isAvailable) {
-      return next(new ErrorHandler("Product is not available", 400));
-    }
-
+    if (!productDoc) return next(new ErrorHandler("Product not found", 404));
+    if (!productDoc.isAvailable) return next(new ErrorHandler("Product is not available", 400));
     if (quantity > productDoc.quantity) {
-      return next(new ErrorHandler(`Only ${productDoc.quantity} units available for this product`, 400));
+      return next(new ErrorHandler(`Only ${productDoc.quantity} units available`, 400));
     }
 
-    // Check if the user is a farmer trying to add their own product
-    const { token } = req.cookies;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Prevent farmer from adding their own product
     const uploaderId = productDoc.upLoadedBy.userID;
     const uploaderRole = productDoc.upLoadedBy.role;
-    const upLoaderName = productDoc.upLoadedBy.name;
-    const name = productDoc.name;
-    const price = productDoc.price;
-    const images=productDoc.images || [];
-    if (decoded.role === "farmer" && 
-        uploaderId.toString() === req.user._id.toString() && 
+    const { token } = req.cookies;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (decoded.role === "farmer" &&
+        uploaderId.toString() === userId.toString() &&
         uploaderRole === "farmer") {
       return next(new ErrorHandler("You cannot add your own product to cart", 403));
     }
-    if(decoded.role ==='supplier'){
-      return next(new ErrorHandler("You can not order",403));
-    }
-    // Find user's cart - this line needed fixing!
-    let cart = await Cart.findOne({ userId: userId });
 
+    if (decoded.role === "supplier") {
+      return next(new ErrorHandler("Suppliers are not allowed to order", 403));
+    }
+
+    // Find or create the cart
+    let cart = await Cart.findOne({ userId });
     if (!cart) {
       cart = await Cart.create({
-        userId: req.user._id,
+        userId,
         userRole: decoded.role,
-        products: [{ 
-          productId,
-          name,
-          price, 
-          quantity,
-          images,
-          supplier: {
-            userID: uploaderId,
-            role: uploaderRole,
-            name: upLoaderName
-          } 
-        }],
-        totalPrice: price * quantity,
-        expiresAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000) // Set expiration
+        products: [{ productId, quantity }],
+        totalPrice: productDoc.price * quantity,
+        expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
       });
     } else {
-      
-      
-      // Ensure products is an array
-      if (!Array.isArray(cart.products)) {
-        cart.products = [];
-      }
-      
-      // Check if product already exists in cart
-      const itemIndex = cart.products.findIndex(
-        item => item.productId.toString() === productId.toString()
+      const index = cart.products.findIndex(
+        item => item.productId.toString() === productId
       );
 
-      if (itemIndex > -1) {
-        // Update existing item quantity
-        const newQuantity = cart.products[itemIndex].quantity + quantity;
-        
-        // Check if the total quantity exceeds available stock
+      if (index > -1) {
+        const newQuantity = cart.products[index].quantity + quantity;
         if (newQuantity > productDoc.quantity) {
-          return next(new ErrorHandler(`Cannot add ${quantity} more units. Only ${productDoc.quantity - cart.products[itemIndex].quantity} more units available.`, 400));
+          return next(new ErrorHandler(`Only ${productDoc.quantity - cart.products[index].quantity} more units available`, 400));
         }
-        
-        cart.products[itemIndex].quantity = newQuantity;
+        cart.products[index].quantity = newQuantity;
       } else {
-        // Add new item to cart
-        cart.products.push({
-          productId: productDoc._id,
-          name: productDoc.name,
-          price: productDoc.price,
-          quantity,
-          images,
-          supplier: {
-            userID: uploaderId,
-            role: uploaderRole,
-            name: upLoaderName
-          }
-        });
+        cart.products.push({ productId, quantity });
       }
 
-      // Calculate cart totals
-      calculateCartTotals(cart);
       await updateCartExpiration(cart);
       await cart.save();
     }
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Item added to cart successfully",
+    await cart.populate("products.productId");
+    calculateCartTotals(cart);
+    await cart.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Item added to cart",
       cart,
-      expiresAt: cart.expiresAt // Include expiration time in response
+      expiresAt: cart.expiresAt
     });
   } catch (err) {
     next(err);
   }
 };
+
 // Get current user's cart
 export const getCart = async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user._id });
+    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
     
     if (!cart) {
       return res.status(200).json({ 
@@ -170,7 +130,7 @@ export const getCart = async (req, res, next) => {
 export const removeFromCart = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const cart = await Cart.findOne({ userId: req.user._id });
+    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
     
     if (!cart) {
       return next(new ErrorHandler("Cart not found", 404));
@@ -211,7 +171,7 @@ export const removeFromCart = async (req, res, next) => {
 // Clear the whole cart
 export const clearCart = async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user._id });
+    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
     
     if (!cart) {
       return res.status(200).json({ 
@@ -222,7 +182,7 @@ export const clearCart = async (req, res, next) => {
 
     // For clearCart, we usually delete the entire cart document
     // so no need to update expiration since it's being removed
-    await Cart.findOneAndDelete({ userId: req.user._id });
+    await Cart.findOneAndDelete({ userId: req.user._id }).populate("products.productId");
     
     res.status(200).json({ 
       success: true, 
@@ -242,7 +202,7 @@ export const updateCartItem = async (req, res, next) => {
       return next(new ErrorHandler("Valid quantity is required", 400));
     }
 
-    const cart = await Cart.findOne({ userId: req.user._id });
+    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
     
     if (!cart) {
       return next(new ErrorHandler("Cart not found", 404));
@@ -299,7 +259,7 @@ export const updateCartItem = async (req, res, next) => {
 // Get cart summary (item count and total price)
 export const getCartSummary = async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user._id });
+    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
     
     if (!cart) {
       return res.status(200).json({ 
@@ -335,7 +295,7 @@ export const getCartSummary = async (req, res, next) => {
 };
 export const getCartExpiration = async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user._id });
+    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
     
     if (!cart) {
       return res.status(200).json({
@@ -372,8 +332,14 @@ export const getCartExpiration = async (req, res, next) => {
 
 // Helper function to calculate cart totals
 const calculateCartTotals = (cart) => {
-  cart.totalPrice = cart.products.reduce((total, item) => total + (item.price * item.quantity), 0);
+  cart.totalPrice = cart.products.reduce((total, item) => {
+    if (item.productId && item.productId.price) {
+      return total + (item.productId.price * item.quantity);
+    }
+    return total;
+  }, 0);
 };
+
 
 // // Calculate cart totals helper function
 // const calculateCartTotals = (cart) => {

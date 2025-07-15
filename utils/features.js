@@ -11,9 +11,9 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
   .status(statusCode)
   .cookie("token", token, {
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000,
-    sameSite: process.env.NODE_ENV === "Development" ? "Lax" : "None", // 🔥 "None" is required for cross-origin
-    secure: process.env.NODE_ENV === "Development" ? false : true,     // 🔥 Must be true when using https
+    maxAge:   60 * 60 * 1000,
+    sameSite: process.env.NODE_ENV === "Development" ? "Lax" : "None", //  "None" is required for cross-origin
+    secure: process.env.NODE_ENV === "Development" ? false : true,     //  Must be true when using https
   })
   .json({
     success: true,

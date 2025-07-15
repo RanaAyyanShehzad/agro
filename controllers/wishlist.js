@@ -23,15 +23,12 @@ export const addToWishlist = async (req, res, next) => {
     const { token } = req.cookies;
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Prevent farmer from adding their own product
     if (
       decoded.role === "farmer" &&
       productDoc.upLoadedBy.userID.toString() === userId.toString() &&
       productDoc.upLoadedBy.role === "farmer"
     ) {
-      return next(
-        new ErrorHandler("You cannot add your own product to wishlist", 403)
-      );
+      return next(new ErrorHandler("You cannot add your own product to wishlist", 403));
     }
 
     let wishlist = await Wishlist.findOne({ userId });
@@ -80,9 +77,13 @@ export const getWishlist = async (req, res, next) => {
       });
     }
 
-    // Remove deleted products
+    // Remove deleted product refs
+    const originalLength = wishlist.products.length;
     wishlist.products = wishlist.products.filter(p => p.productId !== null);
-    await wishlist.save();
+
+    if (wishlist.products.length !== originalLength) {
+      await wishlist.save(); // Only save if changed
+    }
 
     res.status(200).json({
       success: true,
@@ -149,14 +150,11 @@ export const moveToCart = async (req, res, next) => {
     }
 
     const wishlist = await Wishlist.findOne({ userId });
-    if (!wishlist) {
-      return next(new ErrorHandler("Wishlist not found", 404));
-    }
+    if (!wishlist) return next(new ErrorHandler("Wishlist not found", 404));
 
     const itemIndex = wishlist.products.findIndex(
       item => item.productId.toString() === productId
     );
-
     if (itemIndex === -1) {
       return next(new ErrorHandler("Product not found in wishlist", 404));
     }
@@ -173,16 +171,15 @@ export const moveToCart = async (req, res, next) => {
     }
 
     if (quantity > productDoc.quantity) {
-      return next(
-        new ErrorHandler(
-          `Only ${productDoc.quantity} units available for this product`,
-          400
-        )
-      );
+      return next(new ErrorHandler(`Only ${productDoc.quantity} units available`, 400));
     }
 
     const { token } = req.cookies;
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (decoded.role === "supplier") {
+      return next(new ErrorHandler("Suppliers cannot place orders", 403));
+    }
 
     let cart = await Cart.findOne({ userId });
 
@@ -190,22 +187,8 @@ export const moveToCart = async (req, res, next) => {
       cart = await Cart.create({
         userId,
         userRole: decoded.role,
-        products: [
-          {
-            productId: productDoc._id,
-            name: productDoc.name,
-            price: productDoc.price,
-            quantity,
-            images:productDoc.images,
-            supplier: {
-              userID: productDoc.upLoadedBy.userID,
-              role: productDoc.upLoadedBy.role,
-              name: productDoc.upLoadedBy.name
-            }
-          }
-        ],
-        totalPrice: productDoc.price * quantity,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+        products: [{ productId: productDoc._id, quantity }],
+        expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
       });
     } else {
       const cartIndex = cart.products.findIndex(
@@ -228,27 +211,22 @@ export const moveToCart = async (req, res, next) => {
 
         cart.products[cartIndex].quantity = newQty;
       } else {
-        cart.products.push({
-          productId: productDoc._id,
-          name: productDoc.name,
-          price: productDoc.price,
-          quantity,
-          images:productDoc.images,
-          supplier: {
-            userID: productDoc.upLoadedBy.userID,
-            role: productDoc.upLoadedBy.role,
-            name: productDoc.upLoadedBy.name
-          }
-        });
+        cart.products.push({ productId: productDoc._id, quantity });
       }
 
-      cart.totalPrice = cart.products.reduce(
-        (total, item) => total + item.price * item.quantity,
-        0
-      );
       await updateCartExpiration(cart);
-      await cart.save();
     }
+
+    // Populate and calculate price
+    await cart.populate("products.productId");
+    cart.totalPrice = cart.products.reduce((total, item) => {
+      if (item.productId) {
+        return total + item.productId.price * item.quantity;
+      }
+      return total;
+    }, 0);
+
+    await cart.save();
 
     // Remove from wishlist after moving
     wishlist.products.splice(itemIndex, 1);

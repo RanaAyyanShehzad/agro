@@ -17,33 +17,12 @@ const cartSchema = new mongoose.Schema({
         ref: "Products",
         required: [true, "Product ID is required"]
       },
-      name: {
-        type: String,
-        required: [true, "Product name is required"]
-      },
-      price: {
-        type: Number,
-        required: [true, "Product price is required"]
-      },
       quantity: {
         type: Number,
         required: [true, "Quantity is required"],
         min: [1, "Quantity must be at least 1"]
-      },images:{
-        type:[String],
-        required:true
-      },
-      supplier: {
-        userID: {
-          type: mongoose.Schema.Types.ObjectId,
-          required: true
-        },
-        role: {
-          type: String,
-          required: true
-        },
-        name: String
       }
+      
     }
   ],
   totalPrice: {
