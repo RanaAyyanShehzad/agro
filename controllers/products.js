@@ -3,6 +3,7 @@ import { product } from "../models/products.js";
 import { successMessage } from "../utils/features.js";
 import { farmer } from "../models/farmer.js";
 import { supplier } from "../models/supplier.js";
+import { Review } from "../models/review.js";
 import jwt from "jsonwebtoken";
 
 // Utility: Decode user and role from JWT token
@@ -75,30 +76,87 @@ export const addProduct = async (req, res, next) => {
 
 // Get all products
 export const getAllProducts = async (req, res, next) => {
-    try {
-        const products = await product.find();
-        res.status(200).json({ success: true, products });
-    } catch (error) {
-        next(error);
+  try {
+    const sortBy = req.query.sort; // optional query param: rating, positive, etc.
+    const products = await product.find();
+
+    // Enrich each product with average rating and sentiment counts
+    const enrichedProducts = await Promise.all(products.map(async (p) => {
+      const reviews = await Review.find({ productId: p._id });
+
+      const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
+      const averageRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+
+      const sentimentCounts = {
+        positive: reviews.filter(r => r.sentiment === 'positive').length,
+        neutral: reviews.filter(r => r.sentiment === 'neutral').length,
+        negative: reviews.filter(r => r.sentiment === 'negative').length
+      };
+
+      return {
+        ...p.toObject(),
+        averageRating: Number(averageRating.toFixed(1)),
+        sentimentCounts
+      };
+    }));
+
+    // Optional Sorting
+    if (sortBy === "rating") {
+      enrichedProducts.sort((a, b) => b.averageRating - a.averageRating);
+    } else if (sortBy === "positive") {
+      enrichedProducts.sort((a, b) => b.sentimentCounts.positive - a.sentimentCounts.positive);
     }
+
+    res.status(200).json({ success: true, products: enrichedProducts });
+
+  } catch (error) {
+    next(error);
+  }
 };
 export const getAllProductsForFarmer = async (req, res, next) => {
-    try {
-        const { userId, role } = getUserAndRole(req);
+  try {
+    const { userId, role } = getUserAndRole(req);
+    const sortBy = req.query.sort;
 
-        if (role !== "farmer") {
-            return next(new ErrorHandler("Only farmers can access this route", 403));
-        }
-
-        const products = await product.find({
-            isAvailable: true,
-            "upLoadedBy.userID": { $ne: userId } // exclude own products
-        });
-
-        res.status(200).json({ success: true, products });
-    } catch (error) {
-        next(error);
+    if (role !== "farmer") {
+      return next(new ErrorHandler("Only farmers can access this route", 403));
     }
+
+    const products = await product.find({
+      isAvailable: true,
+      "upLoadedBy.userID": { $ne: userId }
+    });
+
+    const enrichedProducts = await Promise.all(products.map(async (p) => {
+      const reviews = await Review.find({ productId: p._id });
+
+      const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
+      const averageRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+
+      const sentimentCounts = {
+        positive: reviews.filter(r => r.sentiment === 'positive').length,
+        neutral: reviews.filter(r => r.sentiment === 'neutral').length,
+        negative: reviews.filter(r => r.sentiment === 'negative').length
+      };
+
+      return {
+        ...p.toObject(),
+        averageRating: Number(averageRating.toFixed(1)),
+        sentimentCounts
+      };
+    }));
+
+    if (sortBy === "rating") {
+      enrichedProducts.sort((a, b) => b.averageRating - a.averageRating);
+    } else if (sortBy === "positive") {
+      enrichedProducts.sort((a, b) => b.sentimentCounts.positive - a.sentimentCounts.positive);
+    }
+
+    res.status(200).json({ success: true, products: enrichedProducts });
+
+  } catch (error) {
+    next(error);
+  }
 };
 
 // Get current user's products

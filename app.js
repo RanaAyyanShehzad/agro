@@ -7,6 +7,7 @@ import supplierRoutes from "./routes/supplier.js";
 import productRoutes from "./routes/product.js";
 import cartRoutes from "./routes/cart.js";
 import wishlistRoutes from "./routes/wishlist.js";
+import reviewRoutes from "./routes/review.js";
 import cors from "cors";
 import { config } from "dotenv";
 import cookieParser from "cookie-parser";
@@ -56,6 +57,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/v1/order", orderRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/review",reviewRoutes);
 
 // Error handling middleware
 app.use(errorMiddleware);
