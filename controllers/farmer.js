@@ -141,7 +141,7 @@ export const Login = async (req, res, next) => {
       return next(new ErrorHandler("Please provide password", 404));
     }
     let user = await farmer.findOne({ email }).select("+password");
-    if (!user) return next(new ErrorHandler("Invalid Email or Password", 404));
+    if (!user) return next(new ErrorHandler("User not found", 404));
     if (!user.verified) {
       return next(new ErrorHandler("Please verify your account first", 403));
     }

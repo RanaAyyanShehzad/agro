@@ -8,6 +8,6 @@ const router = express.Router();
 // All cart routes require authentication
 router.use(isAuthenticated); // must come first
 router.post('/add',addReview);
-router.get('/get-review',getProductReviews);
+router.get('/get-review/:productId',getProductReviews);
 
 export default router;
