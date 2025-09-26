@@ -32,8 +32,8 @@
 // utils/sendEmail.js
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
+const resend = new Resend("re_hLYcoDYJ_ADUtY5FrnoSTEmmgNnBdPmvP");
+console.log("Resend ApI Key is ,",process.env.RESEND_API_KEY);
 export const sendEmail = async (to, subject, text) => {
   try {
     const { data, error } = await resend.emails.send({

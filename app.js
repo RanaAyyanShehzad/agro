@@ -16,6 +16,11 @@ import { errorMiddleware } from "./middlewares/error.js";
 import { connectDB } from "./data/database.js";
 import { setupCartCleanupJob } from './jobs/cartCleanup.js';
 
+import weatherRoutes from "./routes/weatherRoutes.js";
+import chatbotRoutes from "./routes/chatbotRoutes.js";
+
+
+
 
 // Initialize Express app
 export const app = express();
@@ -48,7 +53,7 @@ app.use(cors({
 app.get('/', (req, res) => {
   res.send('Welcome to the Agro Backend API');
 });
-
+app.use("/api/weather", weatherRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use("/api/farmers", farmerRoutes);
 app.use("/api/buyers", buyerRoutes);
@@ -58,7 +63,7 @@ app.use("/api/v1/order", orderRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/review",reviewRoutes);
-
+app.use("/api/chatbot", chatbotRoutes);
 // Error handling middleware
 app.use(errorMiddleware);
 
