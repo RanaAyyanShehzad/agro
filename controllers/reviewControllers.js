@@ -2,6 +2,7 @@
 import Sentiment from "sentiment";
 import { Review } from "../models/review.js";
 import jwt from "jsonwebtoken";
+import ErrorHandler from "../middlewares/error.js";
 const sentiment = new Sentiment();
 const getUserAndRole = (req) => {
     const { token } = req.cookies;
@@ -13,6 +14,11 @@ export const addReview = async (req, res, next) => {
   try {
     const { productId, rating, comment } = req.body;
     const { userId, userRole } = getUserAndRole(req);
+
+    // Suppliers cannot write reviews
+    if (userRole === "supplier") {
+      return next(new ErrorHandler("Suppliers are not allowed to write reviews", 403));
+    }
 
     const analysis = sentiment.analyze(comment);
     const sentimentResult =

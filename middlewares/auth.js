@@ -3,7 +3,6 @@ import { farmer } from "../models/farmer.js"
 import ErrorHandler from "./error.js";
 import { buyer } from "../models/buyer.js";
 import { supplier } from "../models/supplier.js";
-import { AwsInstance } from "twilio/lib/rest/accounts/v1/credential/aws.js";
 import { admin } from "../models/admin.js";
 export const isAuthenticated = async (req, res, next) => {
     try {

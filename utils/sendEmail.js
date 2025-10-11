@@ -32,12 +32,17 @@
 // utils/sendEmail.js
 import { Resend } from "resend";
 
-const resend = new Resend("re_hLYcoDYJ_ADUtY5FrnoSTEmmgNnBdPmvP");
-console.log("Resend ApI Key is ,",process.env.RESEND_API_KEY);
 export const sendEmail = async (to, subject, text) => {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY is not set. Check data/config.env and dotenv loading.");
+  }
+
+  const resend = new Resend(apiKey);
+
   try {
     const { data, error } = await resend.emails.send({
-      from: "onboarding@resend.dev", // default free domain
+      from: "onboarding@resend.dev",
       to,
       subject,
       text,
