@@ -47,7 +47,12 @@ export const addProduct = async (req, res, next) => {
         if (!nameRegex.test(name)) {
             return next(new ErrorHandler("Name can only contain letters, spaces, and hyphens.", 400));
         }
-
+if(price<=0 && price>=2000000){
+    return next(new ErrorHandler("Price must be greater than 0 and less than 2000000", 400));
+}
+if(quantity<=0 && quantity>=1000){
+    return next(new ErrorHandler("Quantity must be greater than 0 and less than 10000", 400));
+}
         const uploader = await getUploader(userId, role);
         const uploaderName = uploader.name;
         const isAvailable = quantity > 0;
@@ -218,7 +223,12 @@ export const updateProduct = async (req, res, next) => {
             images.length === 0) {
             return next(new ErrorHandler("All fields are required", 400));
         }
-
+        if(price<=0 && price>=2000000){
+          return next(new ErrorHandler("Price must be greater than 0 and less than 2000000", 400));
+      }
+      if(quantity<=0 && quantity>=1000){
+          return next(new ErrorHandler("Quantity must be greater than 0 and less than 10000", 400));
+      }
         Object.assign(productToUpdate, {
             name,
             description,
