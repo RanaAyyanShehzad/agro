@@ -1,34 +1,27 @@
 import nodemailer from "nodemailer";
 
-export const sendEmail = async (to, subject, text) => {
-  try {
-    const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587, // TLS
-  secure: false,
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,          // smtp.gmail.com
+  port: Number(process.env.EMAIL_PORT),  // 465
+  secure: process.env.EMAIL_SECURE === "true", // true for 465
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.EMAIL_USER,        // yourgmail@gmail.com
+    pass: process.env.EMAIL_PASS,        // app password
   },
+  connectionTimeout: 15000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
 });
 
-
-    // Optional: verify transporter before sending
-    await transporter.verify();
-
-    await transporter.sendMail({
-      from: `"Farm Marketplace" <${process.env.EMAIL_USER}>`,
-      to,
-      subject,
-      text,
-    });
-
-    console.log("✅ Email sent successfully");
-  } catch (error) {
-    console.error("❌ Email sending failed:", error.message);
-    throw error;
-  }
-};
+export async function sendEmail(to, subject, text) {
+  await transporter.verify(); // optional: surfaces handshake issues early
+  await transporter.sendMail({
+    from: `"FarmConnect" <${process.env.EMAIL_USER}>`,
+    to,
+    subject,
+    text,
+  });
+}
 // utils/sendEmail.js
 // import { Resend } from "resend";
 
