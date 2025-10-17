@@ -29,7 +29,7 @@
 //     throw error;
 //   }
 // };
-utils/sendEmail.js
+
 import { Resend } from "resend";
 
 export const sendEmail = async (to, subject, text) => {
