@@ -1,62 +1,51 @@
-// import nodemailer from "nodemailer";
-
-// export const sendEmail = async (to, subject, text) => {
-//   try {
-//     const transporter = nodemailer.createTransport({
-//   host: "smtp.gmail.com",
-//   port: 587, // TLS
-//   secure: false,
-//   auth: {
-//     user: process.env.EMAIL_USER,
-//     pass: process.env.EMAIL_PASS,
-//   },
-// });
-
-
-//     // Optional: verify transporter before sending
-//     await transporter.verify();
-
-//     await transporter.sendMail({
-//       from: `"Farm Marketplace" <${process.env.EMAIL_USER}>`,
-//       to,
-//       subject,
-//       text,
-//     });
-
-//     console.log("✅ Email sent successfully");
-//   } catch (error) {
-//     console.error("❌ Email sending failed:", error.message);
-//     throw error;
-//   }
-// };
-
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
 export const sendEmail = async (to, subject, text) => {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    throw new Error("RESEND_API_KEY is not set. Check data/config.env and dotenv loading.");
+  const host = process.env.EMAIL_HOST; // e.g., smtp.gmail.com
+  const portStr = process.env.EMAIL_PORT; // "465" or "587"
+  const secureEnv = process.env.EMAIL_SECURE; // "true" or "false"
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+
+  if (!host || !portStr || !user || !pass) {
+    throw new Error(
+      "SMTP env vars missing. Required: EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS"
+    );
   }
 
-  const resend = new Resend(apiKey);
+  const port = Number(portStr);
+  const secure = secureEnv ? secureEnv === "true" : port === 465;
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure, // true for 465, false for 587 (STARTTLS)
+    auth: { user, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
+    tls: { servername: host },
+  });
+
+  // Optional: surface handshake issues early in logs
+  try {
+    await transporter.verify();
+  } catch (verifyErr) {
+    // Continue to attempt send; verify can fail on some providers but send still works
+    console.warn("SMTP verify warning:", verifyErr?.message || verifyErr);
+  }
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: "onboarding@resend.dev",
+    const info = await transporter.sendMail({
+      from: `"FarmConnect" <${user}>`,
       to,
       subject,
       text,
     });
-
-    if (error) {
-      console.error("❌ Resend email error:", error);
-      throw new Error("Email sending failed");
-    }
-
-    console.log("✅ Email sent:", data);
-    return data;
-  } catch (err) {
-    console.error("❌ Email sending failed:", err);
-    throw err;
+    console.log("✅ Email sent:", info.messageId || info);
+    return info;
+  } catch (error) {
+    console.error("❌ Email sending failed:", error?.message || error);
+    throw error;
   }
 };
