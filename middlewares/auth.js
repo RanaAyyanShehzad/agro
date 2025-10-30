@@ -7,7 +7,7 @@ import { admin } from "../models/admin.js";
 export const isAuthenticated = async (req, res, next) => {
     try {
         const { token } = req.cookies;
-        if (!token) return next(new ErrorHandler("Login First", 404));
+        if (!token) return next(new ErrorHandler("Login First", 401));
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const role=decoded.role;
         if(role=="farmer"){

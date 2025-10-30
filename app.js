@@ -12,15 +12,9 @@ import cors from "cors";
 import { config } from "dotenv";
 import cookieParser from "cookie-parser";
 import { errorMiddleware } from "./middlewares/error.js";
-
-import { connectDB } from "./data/database.js";
-import { setupCartCleanupJob } from './jobs/cartCleanup.js';
-
 import weatherRoutes from "./routes/weatherRoutes.js";
 import chatbotRoutes from "./routes/chatbotRoutes.js";
-
-
-
+import { checkAuth } from "./utils/verifyToken.js";
 
 // Initialize Express app
 export const app = express();
@@ -57,6 +51,7 @@ app.use(cors({
 app.get('/', (req, res) => {
   res.send('Welcome to the Agro Backend API');
 });
+app.get("/api/auth/check",checkAuth);
 app.use("/api/weather", weatherRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use("/api/farmers", farmerRoutes);
