@@ -11,40 +11,89 @@ const checkFAQ = (question) => {
   return found ? found.answer : null;
 };
 
+// ✳️ Helper: Fuzzy match (for minor spelling mistakes)
+const isFuzzyMatch = (word, keyword) => {
+  // Normalize
+  word = word.toLowerCase();
+  keyword = keyword.toLowerCase();
+
+  // Exact or partial direct match
+  if (word.includes(keyword) || keyword.includes(word)) return true;
+
+  // Calculate similarity based on common characters
+  let common = 0;
+  for (let char of word) {
+    if (keyword.includes(char)) common++;
+  }
+
+  const similarity = common / Math.max(word.length, keyword.length);
+  return similarity >= 0.6; // Adjust threshold (0.6 = 60% match)
+};
 
 const isAgricultureRelated = (question) => {
   const agricultureKeywords = [
-    // Crops
-    'wheat', 'rice', 'cotton', 'sugarcane', 'corn', 'maize', 'tomato', 'potato', 'onion', 'chili', 'pepper',
-    'vegetable', 'fruit', 'crop', 'plant', 'seed', 'harvest', 'cultivation', 'farming', 'agriculture',
-    
-    // Farming practices
-    'irrigation', 'fertilizer', 'pesticide', 'herbicide', 'soil', 'compost', 'manure', 'organic',
-    'pest', 'disease', 'weed', 'yield', 'production', 'crop rotation', 'sowing', 'planting',
-    
-    // Livestock & animals
-    'cattle', 'cow', 'buffalo', 'goat', 'sheep', 'chicken', 'poultry', 'livestock', 'animal',
-    'milk', 'meat', 'dairy', 'fodder', 'feed',
-    
-    // Equipment & tools
-    'tractor', 'plow', 'harvester', 'irrigation system', 'drip', 'sprinkler', 'farm equipment',
-    
-    // Weather & climate
-    'weather', 'rain', 'drought', 'flood', 'temperature', 'climate', 'season', 'monsoon',
-    
-    // Economics & marketing
-    'price', 'market', 'profit', 'cost', 'subsidy', 'loan', 'credit', 'insurance',
-    
-    // Pakistani specific
-    'punjab', 'sindh', 'balochistan', 'kpk', 'pakistan', 'pakistani', 'basmati', 'bt cotton',
-    
-    // General farming terms
-    'farm', 'farmer', 'agricultural', 'agro', 'rural', 'village', 'field', 'land', 'acre', 'hectare'
+    // 🌾 Major Crops (Punjab & Pakistan)
+    'wheat', 'rice', 'cotton', 'sugarcane', 'maize', 'corn', 'barley', 'millet', 'bajra', 'jowar',
+    'gram', 'pulses', 'lentil', 'masoor', 'moong', 'mash', 'chana', 'canola', 'sunflower', 'mustard',
+    'oilseed', 'bt cotton', 'basmati', 'irri rice', 'guara', 'fodder', 'barseem', 'lucerne',
+    'triticale', 'sorghum',
+
+    // 🥕 Vegetables
+    'potato', 'aloo', 'tomato', 'tamatar', 'onion', 'pyaaz', 'garlic', 'lehsan', 'ginger', 'adrak',
+    'okra', 'bhindi', 'brinjal', 'baingan', 'cauliflower', 'gobi', 'cabbage', 'band gobi',
+    'spinach', 'palak', 'carrot', 'gajar', 'radish', 'mooli', 'turnip', 'shaljam',
+    'peas', 'matar', 'pumpkin', 'kaddu', 'bottle gourd', 'lauki', 'bitter gourd', 'karela',
+    'cucumber', 'kheera', 'chili', 'mirch', 'capsicum', 'shimla mirch', 'lettuce', 'salad patta',
+    'beetroot', 'turai', 'tinda', 'arvi',
+
+    // 🍊 Fruits
+    'mango', 'aam', 'orange', 'malta', 'kinno', 'mosami', 'lemon', 'nimbu', 'banana', 'kela',
+    'apple', 'seb', 'guava', 'amrood', 'pomegranate', 'anar', 'melon', 'kharbooza', 'watermelon', 'tarbooz',
+    'grapes', 'angoor', 'dates', 'khajoor', 'fig', 'anjeer', 'papaya', 'papita', 'peach', 'aadoo',
+    'plum', 'aloobukhara', 'pear', 'nashpati', 'jamun', 'ber', 'mulberry', 'shahtoot',
+    'strawberry', 'blueberry', 'sapodilla', 'chikoo',
+
+    // 🐄 Livestock & Animal Farming
+    'cattle', 'cow', 'gai', 'buffalo', 'bhains', 'goat', 'bakri', 'sheep', 'bhed',
+    'camel', 'oont', 'horse', 'ghora', 'donkey', 'gadha', 'poultry', 'murghi', 'chicken',
+    'duck', 'batakh', 'fish', 'machhli', 'livestock', 'animal', 'milk', 'doodh',
+    'meat', 'gosht', 'dairy', 'fodder', 'charah', 'feed',
+
+    // 🧑‍🌾 Farming Practices & Inputs
+    'irrigation', 'aabpashi', 'fertilizer', 'khaad', 'pesticide', 'dawai', 'herbicide',
+    'soil', 'zameen', 'mitti', 'compost', 'manure', 'organic', 'pest', 'disease',
+    'weed', 'yield', 'production', 'crop rotation', 'sowing', 'bowaai', 'planting', 'harvest', 'katayi',
+    'cultivation', 'kasht', 'plowing', 'jootai', 'watering', 'spraying', 'threshing', 'reaping',
+
+    // ⚙️ Equipment & Tools
+    'tractor', 'hal', 'plow', 'seed drill', 'harvester', 'combine', 'sprayer', 'pipe', 'irrigation system',
+    'drip', 'sprinkler', 'farm equipment', 'cultivator', 'trolley', 'diesel engine', 'thresher',
+
+    // ☁️ Weather & Climate
+    'weather', 'rain', 'baarish', 'drought', 'flood', 'temperature', 'climate', 'season', 'monsoon', 'humidity',
+    'heatwave', 'sardi', 'garmi', 'thand', 'storm', 'andhi', 'hailstorm', 'olay',
+
+    // 💰 Market & Economy
+    'price', 'market', 'mandi', 'profit', 'cost', 'subsidy', 'loan', 'qarza', 'credit', 'insurance',
+    'income', 'earning', 'support price', 'export', 'import', 'supply', 'demand',
+
+    // 🌍 Regional
+    'punjab', 'pakistan', 'farmer', 'kisan', 'agro', 'agribusiness', 'agriculture', 'farm', 'zameendar',
+    'field', 'land', 'acre', 'hectare', 'tubewell', 'canal', 'nahar',
+
+    // 🌿 Local Agro Terms
+    'beej', 'dhan', 'ganna', 'kapaas', 'charai', 'machan', 'bail', 'machhli faram', 'murghi faram'
   ];
-  
-  const questionLower = question.toLowerCase();
-  return agricultureKeywords.some(keyword => questionLower.includes(keyword));
+
+  const questionWords = question.toLowerCase().split(/\s+/);
+
+  return questionWords.some(word =>
+    agricultureKeywords.some(keyword =>
+      word.includes(keyword) || keyword.includes(word) || isFuzzyMatch(word, keyword)
+    )
+  );
 };
+
 
 //Call Gemini AI if not found in FAQs
 const askGemini = async (question) => {
