@@ -217,7 +217,7 @@ export const updateCartItem = async (req, res, next) => {
 
     if (quantity > productDoc.quantity) {
       return next(
-        new ErrorHandler(`Only ${productDoc.quantity} units available`, 400)
+        new ErrorHandler(`Only ${productDoc.quantity - cart.products[index].quantity} units available`, 400)
       );
     }
 
