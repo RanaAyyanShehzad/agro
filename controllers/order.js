@@ -67,6 +67,8 @@ export const createOrder = async (req, res, next) => {
       for (const email of uniqueSuppliers.values()) {
         await sendEmail(email, "New Order Received", "Your product(s) were ordered. Check your dashboard.");
       }
+    
+      await savedOrder.populate("products.productId");   // <-- populate here
 
       await Cart.findByIdAndDelete(cartId);
       cartDeleted = true;
