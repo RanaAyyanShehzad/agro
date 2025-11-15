@@ -204,7 +204,7 @@ export const updateCartItem = async (req, res, next) => {
     if (!cart) return next(new ErrorHandler("Cart not found", 404));
 
     const index = cart.products.findIndex(
-      (item) => item.productId.toString() === productId
+      (item) => item._id.toString() === productId
     );
 
     if (index === -1) return next(new ErrorHandler("Item not found", 404));
