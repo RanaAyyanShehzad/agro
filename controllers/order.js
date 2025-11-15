@@ -21,7 +21,7 @@ export const createOrder = async (req, res, next) => {
     const userId = req.user.id;
     const decode = getRole(req).role;
 
-    const cart = await Cart.findOne({ _id: cartId, userId });
+    const cart = await Cart.findOne({ _id: cartId, userId }).populate("products.productId");
     if (!cart) return next(new ErrorHandler("Cart not found or doesn't belong to you", 404));
     if (cart.products.length === 0) return next(new ErrorHandler("Cannot create order with empty cart", 400));
 
