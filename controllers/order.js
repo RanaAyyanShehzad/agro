@@ -30,7 +30,7 @@ export const createOrder = async (req, res, next) => {
     const orderData = {
       userId: cart.userId,
       userRole: cart.userRole,
-      products: cart.products.map(p => ({ productId: p.productId, quantity: p.quantity })),
+      products: cart.products.map(p => ({ productId: p.productId._id, quantity: p.quantity })),
       totalPrice: cart.totalPrice,
       cartId: cart._id,
       paymentInfo: { method: paymentMethod, status: "pending" },
@@ -67,8 +67,12 @@ export const createOrder = async (req, res, next) => {
       for (const email of uniqueSuppliers.values()) {
         await sendEmail(email, "New Order Received", "Your product(s) were ordered. Check your dashboard.");
       }
-    
-      await savedOrder.populate("products.productId");   // <-- populate here
+
+      // <-- populate here
+      await savedOrder.populate({
+        path: "products.productId",
+        model: "Products",
+      });
 
       await Cart.findByIdAndDelete(cartId);
       cartDeleted = true;
