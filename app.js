@@ -30,9 +30,11 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use(cors({
-  origin: "*",
+  origin: true, // Reflects the request origin
+  credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 }));
+
 
 
 // Routes
