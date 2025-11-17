@@ -34,7 +34,7 @@ let allowedOrigins = process.env.ALLOWED_ORIGINS;
 if (allowedOrigins) {
   allowedOrigins = allowedOrigins.split(',');
 } else {
-  allowedOrigins = ['http://localhost:3000']; // or your default origin(s)
+  allowedOrigins = ['https://farmconnect-weld-one.vercel.app']; // or your default origin(s)
 }
 
 app.use(cors({
