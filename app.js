@@ -29,23 +29,11 @@ config({
 app.use(express.json());
 app.use(cookieParser());
 
-let allowedOrigins = process.env.ALLOWED_ORIGINS;
-
-if (allowedOrigins) {
-  allowedOrigins = allowedOrigins.split(',');
-} else {
-  allowedOrigins = ['https://farmconnect-weld-one.vercel.app']; // or your default origin(s)
-}
-
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error("Not allowed by CORS"), false);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 }));
+
 
 // Routes
 app.get('/', (req, res) => {
