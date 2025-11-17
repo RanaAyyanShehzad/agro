@@ -21,6 +21,11 @@ export const addToCart = async (req, res, next) => {
     if (quantity > productDoc.quantity) {
       return next(new ErrorHandler(`Only ${productDoc.quantity} units available`, 400));
     }
+    // Deduct stock immediately because item is added to cart
+    productDoc.quantity -= quantity;
+    if (productDoc.quantity < 0) productDoc.quantity = 0;
+
+    await productDoc.save();
 
     // Prevent farmer from buying their own product
     const uploaderId = productDoc.upLoadedBy.userID;
@@ -158,6 +163,14 @@ export const removeFromCart = async (req, res, next) => {
 
     const index = cart.products.findIndex((item) => item._id.toString() === id);
     if (index === -1) return next(new ErrorHandler("Item not found", 404));
+    // Increase stock back
+    const removedItem = cart.products[index];
+    const prod = await product.findById(removedItem.productId);
+    if (prod) {
+      prod.quantity += removedItem.quantity;
+      await prod.save();
+    }
+
 
     cart.products.splice(index, 1);
 
@@ -179,6 +192,18 @@ export const removeFromCart = async (req, res, next) => {
 // ---------------------- CLEAR CART ----------------------
 export const clearCart = async (req, res, next) => {
   try {
+    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
+
+    if (cart) {
+      for (const item of cart.products) {
+        const prod = await product.findById(item.productId._id);
+        if (prod) {
+          prod.quantity += item.quantity;
+          await prod.save();
+        }
+      }
+    }
+
     await Cart.findOneAndDelete({ userId: req.user._id });
 
     res.status(200).json({
@@ -195,48 +220,57 @@ export const updateCartItem = async (req, res, next) => {
   try {
     const { productId, quantity } = req.body;
 
-    if (!quantity || quantity <= 0) {
-      return next(new ErrorHandler("Valid quantity required", 400));
-    }
-
-    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
-
+    const cart = await Cart.findOne({ userId: req.user._id });
     if (!cart) return next(new ErrorHandler("Cart not found", 404));
 
     const index = cart.products.findIndex(
-      (item) => item.productId._id.toString() === productId
+      (item) => item.productId.toString() === productId
     );
 
-    if (index === -1) return next(new ErrorHandler("Item not found", 404));
-
-    const productDoc = await product.findById(productId);
-
-    if (!productDoc || !productDoc.isAvailable) {
-      return next(new ErrorHandler("Product unavailable", 400));
+    if (index === -1) {
+      return next(new ErrorHandler("Product not found in cart", 404));
     }
 
-    if (quantity > productDoc.quantity) {
-      return next(
-        new ErrorHandler(`Only ${productDoc.quantity - cart.products[index].quantity} units available`, 400)
-      );
+   
+
+    const productDoc = await Product.findById(productId);
+    if (!productDoc) return next(new ErrorHandler("Product not found", 404));
+
+    const oldQty = cart.products[index].quantity;     // current qty in cart
+    const difference = quantity - oldQty;             // calculate change
+
+    if (difference > 0) {
+      // user increased quantity → decrease product stock
+      if (difference > productDoc.quantity) {
+        return next(
+          new ErrorHandler(`Only ${productDoc.quantity} more available`, 400)
+        );
+      }
+
+      productDoc.quantity -= difference;
+      await productDoc.save();
+    } else if (difference < 0) {
+      // user decreased quantity → restore stock
+      productDoc.quantity += Math.abs(difference);
+      await productDoc.save();
     }
 
+    // update cart quantity
     cart.products[index].quantity = quantity;
-
-    calculateCartTotals(cart);
-    await updateCartExpiration(cart);
+    cart.expirationTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // extend validity
     await cart.save();
 
     res.status(200).json({
       success: true,
-      message: "Cart item updated",
+      message: "Cart updated successfully",
       cart,
-      expiresAt: cart.expiresAt
     });
+
   } catch (err) {
     next(err);
   }
 };
+
 
 // ---------------------- CART SUMMARY ----------------------
 export const getCartSummary = async (req, res, next) => {

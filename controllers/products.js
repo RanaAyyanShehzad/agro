@@ -82,7 +82,7 @@ if(quantity<=0 && quantity>=1000){
 // Get all products
 export const getAllProducts = async (req, res, next) => {
   try {
-    const sortBy = req.query.sort; // optional query param: rating, positive, etc.
+    const sortBy = req.query.sort || "rating"; // optional query param: rating, positive, etc.
     const products = await product.find();
 
     // Enrich each product with average rating and sentiment counts
@@ -121,7 +121,7 @@ export const getAllProducts = async (req, res, next) => {
 export const getAllProductsForFarmer = async (req, res, next) => {
   try {
     const { userId, role } = getUserAndRole(req);
-    const sortBy = req.query.sort;
+    const sortBy = req.query.sort || "rating";
 
     if (role !== "farmer") {
       return next(new ErrorHandler("Only farmers can access this route", 403));
