@@ -233,7 +233,7 @@ export const updateCartItem = async (req, res, next) => {
 
    
 
-    const productDoc = await Product.findById(productId);
+    const productDoc = await product.findById(productId);
     if (!productDoc) return next(new ErrorHandler("Product not found", 404));
 
     const oldQty = cart.products[index].quantity;     // current qty in cart

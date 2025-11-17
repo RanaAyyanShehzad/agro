@@ -18,7 +18,8 @@ export const fetchWeather = async (city) => {
       description.includes("storm") ||
       description.includes("rain") ||
       description.includes("flood") ||
-      description.includes("snow")
+      description.includes("snow") ||
+      description.includes("smoke")
     ) {
       alert = `⚠️ Dangerous weather: ${description}, Temp: ${temperature}°C`;
     }
