@@ -102,55 +102,75 @@ export const addToCart = async (req, res, next) => {
 // ---------------------- GET CART ----------------------
 export const getCart = async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
+    let cart = await Cart.findOne({ userId: req.user._id }).populate(
+      "products.productId"
+    );
 
+    // If no cart exists → return empty cart
     if (!cart) {
       return res.status(200).json({
         success: true,
-        cart: { userId: req.user._id, products: [], totalPrice: 0 }
+        cart: { userId: req.user._id, products: [], totalPrice: 0 },
+        expiresAt: null
       });
     }
 
     let updated = false;
 
-    // REMOVE unavailable or deleted products
+    // 🔥 CLEANUP CART: remove unavailable / deleted / out-of-stock
     cart.products = cart.products.filter((item) => {
-      if (!item.productId) {
+      const product = item.productId;
+
+      // Product deleted
+      if (!product) {
         updated = true;
         return false;
       }
 
-      if (!item.productId.isAvailable) {
+      // Product unavailable
+      if (!product.isAvailable) {
         updated = true;
         return false;
       }
 
-      if (item.quantity > item.productId.quantity) {
-        item.quantity = item.productId.quantity;
+      // Stock zero → remove from cart
+      if (product.quantity <= 0) {
+        updated = true;
+        return false;
+      }
+
+      // Adjust quantity if user selected more than available stock
+      if (item.quantity > product.quantity) {
+        item.quantity = product.quantity;
         updated = true;
       }
 
       return true;
     });
 
+    // 🔄 If updated → recalculate totals and save
     if (updated) {
       calculateCartTotals(cart);
       await updateCartExpiration(cart);
       await cart.save();
-    } else {
+    } 
+    else {
+      // No change → only update lastActivity
       cart.lastActivity = new Date();
       await cart.save();
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       cart,
       expiresAt: cart.expiresAt,
     });
+
   } catch (err) {
     next(err);
   }
 };
+
 
 // ---------------------- REMOVE ITEM ----------------------
 export const removeFromCart = async (req, res, next) => {
