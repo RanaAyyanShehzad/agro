@@ -1,5 +1,170 @@
 export const farmingFAQs = [
+
   // 🌾 CROP PLANTING & TIMING
+{
+    question: "Hello",
+    answer: "Hello! How can I help you today?"
+  },
+  {
+    question: "Hi",
+    answer: "Hi there! What do you need help with?"
+  },
+  {
+    question: "Assalamualaikum",
+    answer: "Walaikum Assalam! How can I assist you?"
+  },
+  {
+    question: "How are you?",
+    answer: "I'm good! How can I support you with your farming or app issues?"
+  },
+  {
+    question: "Hey",
+    answer: "Hey! Tell me what you're trying to do."
+  },
+
+  // 🧑‍🌾 USER ACCOUNT / LOGIN SIGNUP
+  {
+    question: "How do I create an account?",
+    answer: "Go to Signup, enter your name, mobile, CNIC/email, set a password, and submit. After verification, you can log in."
+  },
+  {
+    question: "I forgot my password, what should I do?",
+    answer: "Use the 'Forgot Password' option, enter your email or phone number, and follow the reset instructions."
+  },
+  {
+    question: "Why can't I log in?",
+    answer: "Incorrect password or unverified account. Double-check your credentials or reset your password."
+  },
+  {
+    question: "Can I change my account details?",
+    answer: "Yes, go to Profile → Edit Profile to update your name, phone number, or address."
+  },
+
+  // 🛒 BUYING PRODUCTS
+  {
+    question: "How can I buy seeds from the app?",
+    answer: "Open the Products section → choose Seeds → select your item → Add to Cart → Place Order."
+  },
+  {
+    question: "How do I buy fertilizers?",
+    answer: "Go to Fertilizers category, choose the product, and order it like any regular item."
+  },
+  {
+    question: "Can I buy pesticides from Agro Farm Connect?",
+    answer: "Yes. Browse the Pesticides section, select a product, and complete the purchase normally."
+  },
+  {
+    question: "How to add items to the cart?",
+    answer: "Open any product and tap the 'Add to Cart' button. You can review it before checkout."
+  },
+  {
+    question: "Do you offer home delivery?",
+    answer: "Yes, orders are delivered to the address you provide at checkout."
+  },
+
+  // 🏪 PRODUCT MANAGEMENT (ADMIN / SELLER FEATURES)
+  {
+    question: "How can I add a new product?",
+    answer: "Admins can open the Products Dashboard → Add Product → enter details → upload image → save."
+  },
+  {
+    question: "Can I update an existing product?",
+    answer: "Yes, admins can edit product name, price, stock, or category from the dashboard."
+  },
+  {
+    question: "How do I delete a product?",
+    answer: "Only admins can delete products through the dashboard's Manage Products section."
+  },
+  {
+    question: "What information is required when adding a product?",
+    answer: "Product name, category, price, stock, description, and at least one image."
+  },
+  {
+    question: "Why is my product not showing?",
+    answer: "Usually because of missing details or the product being inactive. Check your dashboard settings."
+  },
+
+  // 📦 ORDER MANAGEMENT
+  {
+    question: "How do I track my order?",
+    answer: "Go to Orders → select your order → you'll see its status (Pending, Confirmed, Shipped, Delivered)."
+  },
+  {
+    question: "Why is my order still pending?",
+    answer: "The seller hasn't confirmed it yet. Normally it takes a few hours depending on workload."
+  },
+  {
+    question: "How can I cancel my order?",
+    answer: "You can cancel before it is shipped. Open the order and tap 'Cancel Order'."
+  },
+  {
+    question: "What if my delivery is late?",
+    answer: "Check your order status first. If delayed, contact support via the Help section."
+  },
+
+  // 🌦 WEATHER & ALERT SYSTEM
+  {
+    question: "How do weather alerts work?",
+    answer: "The app checks real-time weather for your district. If a risk is detected, an alert is saved to your account."
+  },
+  {
+    question: "What kind of weather alerts can I receive?",
+    answer: "Heatwaves, heavy rain, storms, frost, and wind warnings depending on your area."
+  },
+  {
+    question: "How can I see my recent weather alerts?",
+    answer: "Open the Weather Alerts section from the main menu. All new alerts are listed there."
+  },
+  {
+    question: "Does the app recommend actions during bad weather?",
+    answer: "Yes, it provides suggestions like irrigation timing, frost protection, and harvest adjustments."
+  },
+
+  // 🌾 AGRICULTURE SUPPORT / CROP GUIDANCE
+  {
+    question: "What crop should I grow in winter in Punjab?",
+    answer: "Wheat, mustard, peas, and seasonal vegetables like cauliflower and carrots perform well in winter."
+  },
+  {
+    question: "Which crops need more irrigation?",
+    answer: "Rice and sugarcane need frequent irrigation. Wheat and cotton need moderate water."
+  },
+  {
+    question: "How can I protect crops from insects naturally?",
+    answer: "Use neem oil spray, pheromone traps, proper spacing, and remove infected leaves early."
+  },
+  {
+    question: "What fertilizer dose is best for wheat?",
+    answer: "120-140 kg nitrogen, 60-80 kg phosphorus, and 50-60 kg potash per hectare."
+  },
+
+  // 📊 MARKET & SELLING
+  {
+    question: "Can I sell my crops on Agro Farm Connect?",
+    answer: "Yes, you can list your crops in the Marketplace section with quantity and price."
+  },
+  {
+    question: "How do I set the price of my crops?",
+    answer: "Check local mandi rates and set a competitive price."
+  },
+  {
+    question: "Can buyers contact me directly?",
+    answer: "Yes, if you allow the contact option while listing your product."
+  },
+
+  // ❗ GENERAL HELP & TROUBLESHOOTING
+  {
+    question: "App is not loading, what should I do?",
+    answer: "Check your internet, clear app cache, or restart the device. If still stuck, update the app."
+  },
+  {
+    question: "Images are not loading?",
+    answer: "Slow internet or corrupted product data. Refresh the page or try again later."
+  },
+  {
+    question: "How do I contact support?",
+    answer: "Use the Support section in the app to call or chat with the help team."
+  },
   {
     question: "What is the best time to plant wheat in Punjab, Pakistan?",
     answer: "The best time to plant wheat in Punjab is from mid-November to early December for maximum yield. Early planting (October) can reduce yield by 10-15%."

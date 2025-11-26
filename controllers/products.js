@@ -3,6 +3,7 @@ import { product } from "../models/products.js";
 import { successMessage } from "../utils/features.js";
 import { farmer } from "../models/farmer.js";
 import { supplier } from "../models/supplier.js";
+import { buyer } from "../models/buyer.js";
 import { Review } from "../models/review.js";
 import jwt from "jsonwebtoken";
 
@@ -243,6 +244,112 @@ export const updateProduct = async (req, res, next) => {
 
         await productToUpdate.save();
         successMessage(res, "Product updated successfully", 200);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Get single product with all reviews, reviewer names, and supplier info
+export const getProductDetails = async (req, res, next) => {
+    try {
+        const { productId } = req.params;
+
+        // Find the product
+        const productData = await product.findById(productId);
+        if (!productData) {
+            return next(new ErrorHandler("Product not found", 404));
+        }
+
+        // Get supplier information (product owner)
+        let supplierInfo = null;
+        if (productData.upLoadedBy.role === "supplier") {
+            const supplierData = await supplier.findById(productData.upLoadedBy.userID).select("name email phone address img");
+            supplierInfo = supplierData ? {
+                _id: supplierData._id,
+                name: supplierData.name,
+                email: supplierData.email,
+                phone: supplierData.phone,
+                address: supplierData.address,
+                img: supplierData.img
+            } : null;
+        } else if (productData.upLoadedBy.role === "farmer") {
+            const farmerData = await farmer.findById(productData.upLoadedBy.userID).select("name email phone address img");
+            supplierInfo = farmerData ? {
+                _id: farmerData._id,
+                name: farmerData.name,
+                email: farmerData.email,
+                phone: farmerData.phone,
+                address: farmerData.address,
+                img: farmerData.img
+            } : null;
+        }
+
+        // Get all reviews for this product
+        const allReviews = await Review.find({ productId }).sort({ createdAt: -1 });
+
+        // Enrich each review with reviewer information
+        const reviewsWithUsers = await Promise.all(
+            allReviews.map(async (review) => {
+                let reviewer = null;
+                if (review.userRole === "buyer") {
+                    const buyerData = await buyer.findById(review.userId).select("name");
+                    reviewer = buyerData ? { _id: buyerData._id, name: buyerData.name } : null;
+                } else if (review.userRole === "farmer") {
+                    const farmerData = await farmer.findById(review.userId).select("name");
+                    reviewer = farmerData ? { _id: farmerData._id, name: farmerData.name } : null;
+                }
+
+                return {
+                    _id: review._id,
+                    rating: review.rating,
+                    comment: review.comment,
+                    sentiment: review.sentiment,
+                    createdAt: review.createdAt,
+                    user: reviewer || null,
+                    userRole: review.userRole
+                };
+            })
+        );
+
+        // Calculate sentiment statistics
+        const sentimentStats = {
+            positive: allReviews.filter(r => r.sentiment === 'positive').length,
+            neutral: allReviews.filter(r => r.sentiment === 'neutral').length,
+            negative: allReviews.filter(r => r.sentiment === 'negative').length,
+            total: allReviews.length
+        };
+
+        // Calculate average rating
+        const totalRating = allReviews.reduce((sum, r) => sum + r.rating, 0);
+        const averageRating = allReviews.length > 0 ? Number((totalRating / allReviews.length).toFixed(1)) : 0;
+
+        // Prepare response
+        const response = {
+            success: true,
+            product: {
+                _id: productData._id,
+                name: productData.name,
+                description: productData.description,
+                price: productData.price,
+                unit: productData.unit,
+                quantity: productData.quantity,
+                category: productData.category,
+                isAvailable: productData.isAvailable,
+                images: productData.images,
+                createdAt: productData.createdAt,
+                updatedAt: productData.updatedAt
+            },
+            supplier: supplierInfo || {
+                _id: productData.upLoadedBy.userID,
+                name: productData.upLoadedBy.uploaderName || "Unknown",
+                role: productData.upLoadedBy.role
+            },
+            reviews: reviewsWithUsers,
+            averageRating,
+            sentimentStats
+        };
+
+        res.status(200).json(response);
     } catch (error) {
         next(error);
     }
