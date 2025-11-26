@@ -1,6 +1,8 @@
 // controllers/reviewController.js
 import Sentiment from "sentiment";
 import { Review } from "../models/review.js";
+import { buyer } from "../models/buyer.js";
+import { farmer } from "../models/farmer.js";
 import jwt from "jsonwebtoken";
 import ErrorHandler from "../middlewares/error.js";
 const sentiment = new Sentiment();
@@ -33,7 +35,22 @@ export const addReview = async (req, res, next) => {
       sentiment: sentimentResult,
     });
 
-    res.status(201).json({ success: true, message: "Review submitted", review });
+    // Attach basic user info (name) so frontend can show reviewer name
+    let user = null;
+    if (userRole === "buyer") {
+      user = await buyer.findById(userId).select("name");
+    } else if (userRole === "farmer") {
+      user = await farmer.findById(userId).select("name");
+    }
+
+    const reviewWithUser = {
+      ...review.toObject(),
+      user: user ? { _id: user._id, name: user.name } : null,
+    };
+
+    res
+      .status(201)
+      .json({ success: true, message: "Review submitted", review: reviewWithUser });
   } catch (error) {
     next(error);
   }
@@ -53,6 +70,23 @@ export const getProductReviews = async (req, res, next) => {
       .skip(skip)
       .limit(limit);
 
+    // For each review, load the corresponding user (buyer/farmer) to expose name
+    const reviewsWithUser = await Promise.all(
+      reviews.map(async (review) => {
+        let user = null;
+        if (review.userRole === "buyer") {
+          user = await buyer.findById(review.userId).select("name");
+        } else if (review.userRole === "farmer") {
+          user = await farmer.findById(review.userId).select("name");
+        }
+
+        return {
+          ...review.toObject(),
+          user: user ? { _id: user._id, name: user.name } : null,
+        };
+      })
+    );
+
     const sentimentStats = {
       positive: 0,
       neutral: 0,
@@ -70,11 +104,11 @@ export const getProductReviews = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      reviews,
+      reviews: reviewsWithUser,
       averageRating,
       sentimentStats,
       totalPages: Math.ceil(totalReviews / limit),
-      currentPage: page
+      currentPage: page,
     });
   } catch (error) {
     next(error);
