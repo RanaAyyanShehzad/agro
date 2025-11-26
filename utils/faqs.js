@@ -195,5 +195,35 @@ export const farmingFAQs = [
   {
     question: "How to start a small-scale food processing unit?",
     answer: "Start with simple products like pickles, jams, or flour. Get FSSAI license, maintain hygiene standards, and focus on local market initially."
+  },
+
+  // 🧩 AGRO FARM CONNECT APPLICATION (APP USAGE & FEATURES)
+  {
+    question: "What is Agro Farm Connect and how can it help me as a farmer?",
+    answer: "Agro Farm Connect is a digital platform that helps Pakistani farmers buy inputs (seeds, fertilizers, pesticides), sell crops, and get weather-based alerts and expert guidance in one place. You can create an account, view products, place orders, and receive notifications about dangerous weather for your area."
+  },
+  {
+    question: "How do I create an account on Agro Farm Connect?",
+    answer: "Go to the signup page, enter your basic details (name, mobile number, CNIC or email), create a strong password, and submit the form. After verification, you can log in and start using features like buying inputs, managing orders, and checking weather alerts."
+  },
+  {
+    question: "How can I buy seeds, fertilizers, and pesticides from Agro Farm Connect?",
+    answer: "Browse the products section, filter by category (seeds, fertilizers, pesticides, machinery), and select the items you need. Add them to your cart, confirm your delivery address, and place the order. You can track your orders from the orders section in your profile."
+  },
+  {
+    question: "How do I see weather alerts in Agro Farm Connect?",
+    answer: "Use the weather feature in the app or web dashboard and select your nearest city or district. The system fetches real-time weather data and, if dangerous conditions are detected (extreme heat, heavy rain, storms, etc.), a weather alert is created and saved in your account so you can view recent alerts in the weather alerts section."
+  },
+  {
+    question: "Can Agro Farm Connect suggest actions based on bad weather?",
+    answer: "Yes, when dangerous weather is detected (like heatwaves, heavy rain, storms, or frost risk), Agro Farm Connect can notify you and you can also ask the chatbot for weather-based crop management tips. It will provide practical advice such as irrigation adjustment, spraying schedules, and harvest timing to reduce losses."
+  },
+  {
+    question: "How can I track my orders on Agro Farm Connect?",
+    answer: "After placing an order, go to the orders section from your profile or main menu. You will see the list of your orders with current status (pending, confirmed, shipped, delivered). If there is any issue, you can contact support using the contact details provided in the app."
+  },
+  {
+    question: "Can I use Agro Farm Connect on mobile and desktop?",
+    answer: "Yes, Agro Farm Connect is designed to work on both mobile and desktop browsers. For best experience, use a modern browser like Chrome, Edge, or Firefox, keep your internet connection stable, and always log out from shared devices after use."
   }
 ];

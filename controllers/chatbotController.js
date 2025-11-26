@@ -82,7 +82,16 @@ const isAgricultureRelated = (question) => {
     'field', 'land', 'acre', 'hectare', 'tubewell', 'canal', 'nahar',
 
     // 🌿 Local Agro Terms
-    'beej', 'dhan', 'ganna', 'kapaas', 'charai', 'machan', 'bail', 'machhli faram', 'murghi faram'
+    'beej', 'dhan', 'ganna', 'kapaas', 'charai', 'machan', 'bail', 'machhli faram', 'murghi faram',
+
+    // 🧩 Agro Farm Connect platform & app usage (so chatbot can answer app-related queries)
+    'agro farm', 'agro farm connect', 'agro app', 'kisan app', 'farmer app',
+    'login', 'sign up', 'signup', 'register', 'account', 'profile',
+    'order', 'place order', 'track order', 'cancel order', 'cart', 'wishlist',
+    'buy seeds', 'buy fertilizer', 'buy pesticide',
+    'sell crops', 'sell crop', 'sell wheat', 'sell rice', 'sell vegetables',
+    'marketplace', 'online mandi', 'online market',
+    'weather alert', 'mosam alert', 'alert', 'mosam update'
   ];
 
   const questionWords = question.toLowerCase().split(/\s+/);
