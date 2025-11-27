@@ -103,8 +103,62 @@ export const getOrderById = async (req, res, next) => {
   try {
     const { orderId } = req.params;
     const userId = req.user.id;
-    const order = await Order.findOne({ _id: orderId, userId }).populate("products.productId");
+    const userRole = getRole(req).role;
+    
+    let order = await Order.findById(orderId).populate("products.productId");
     if (!order) return next(new ErrorHandler("Order not found", 404));
+
+    // If user is supplier/farmer, check if they own any products in this order
+    if (userRole === 'supplier' || userRole === 'farmer') {
+      const supplierProducts = order.products.filter(
+        p => p.productId?.upLoadedBy?.userID.toString() === userId
+      );
+      
+      if (supplierProducts.length === 0) {
+        return next(new ErrorHandler("Order not found", 404));
+      }
+      
+      // Populate customer information for suppliers/farmers
+      let customerInfo = null;
+      if (order.userRole === "buyer") {
+        const customer = await buyer.findById(order.userId).select("name email phone address");
+        customerInfo = customer ? { 
+          name: customer.name, 
+          email: customer.email, 
+          phone: customer.phone,
+          address: customer.address 
+        } : null;
+      } else if (order.userRole === "farmer") {
+        const customer = await farmer.findById(order.userId).select("name email phone address");
+        customerInfo = customer ? { 
+          name: customer.name, 
+          email: customer.email, 
+          phone: customer.phone,
+          address: customer.address 
+        } : null;
+      }
+      
+      // Calculate total price for supplier's products only
+      const supplierTotalPrice = supplierProducts.reduce((sum, item) => {
+        return sum + (item.productId.price * item.quantity);
+      }, 0);
+      
+      return res.status(200).json({ 
+        success: true, 
+        order: {
+          ...order.toObject(),
+          products: supplierProducts,
+          totalPrice: supplierTotalPrice,
+          customer: customerInfo
+        }
+      });
+    }
+
+    // For buyers/farmers (customers), only show their own orders
+    if (order.userId.toString() !== userId.toString()) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
     res.status(200).json({ success: true, order });
   } catch (error) {
     next(error);
@@ -120,6 +174,11 @@ export const updateOrderStatus = async (req, res, next) => {
 
     let order = await Order.findById(orderId).populate("products.productId");
     if (!order) return next(new ErrorHandler("Order not found", 404));
+
+    // Prevent status updates if order is canceled
+    if (order.status === 'canceled') {
+      return next(new ErrorHandler("Cannot update status of a canceled order", 400));
+    }
 
     const isSupplierProduct = order.products.some(p => p.productId?.upLoadedBy?.userID.toString() === userId);
 
@@ -192,11 +251,28 @@ export const getSupplierOrders = async (req, res, next) => {
     const supplierId = req.user.id;
     const orders = await Order.find().populate("products.productId").sort({ createdAt: -1 });
 
-    const filteredOrders = orders.map(order => {
+    // Populate buyer/farmer information for each order
+    const ordersWithCustomerInfo = await Promise.all(orders.map(async (order) => {
+      let customerInfo = null;
+      if (order.userRole === "buyer") {
+        const customer = await buyer.findById(order.userId).select("name email phone");
+        customerInfo = customer ? { name: customer.name, email: customer.email, phone: customer.phone } : null;
+      } else if (order.userRole === "farmer") {
+        const customer = await farmer.findById(order.userId).select("name email phone");
+        customerInfo = customer ? { name: customer.name, email: customer.email, phone: customer.phone } : null;
+      }
+
+      return {
+        ...order.toObject(),
+        customer: customerInfo
+      };
+    }));
+
+    const filteredOrders = ordersWithCustomerInfo.map(order => {
       const supplierProducts = order.products.filter(
         p => p.productId?.upLoadedBy?.userID.toString() === supplierId
       );
-      return { ...order.toObject(), products: supplierProducts };
+      return { ...order, products: supplierProducts };
     }).filter(order => order.products.length > 0);
 
     res.status(200).json({ success: true, count: filteredOrders.length, orders: filteredOrders });
