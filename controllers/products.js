@@ -44,10 +44,10 @@ export const addProduct = async (req, res, next) => {
             return next(new ErrorHandler("All fields including images are required", 400));
         }
 
-        const nameRegex = /^[a-zA-Z\s-]+$/;
-        if (!nameRegex.test(name)) {
-            return next(new ErrorHandler("Name can only contain letters, spaces, and hyphens.", 400));
-        }
+        // const nameRegex = /^[a-zA-Z\s-]+$/;
+        // if (!nameRegex.test(name)) {
+        //     return next(new ErrorHandler("Name can only contain letters, spaces, and hyphens.", 400));
+        // }
 if(price<=0 && price>=2000000){
     return next(new ErrorHandler("Price must be greater than 0 and less than 2000000", 400));
 }

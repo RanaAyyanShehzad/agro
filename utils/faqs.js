@@ -1,7 +1,7 @@
 export const farmingFAQs = [
 
   // 🌾 CROP PLANTING & TIMING
-{
+  {
     question: "Hello",
     answer: "Hello! How can I help you today?"
   },
@@ -390,5 +390,285 @@ export const farmingFAQs = [
   {
     question: "Can I use Agro Farm Connect on mobile and desktop?",
     answer: "Yes, Agro Farm Connect is designed to work on both mobile and desktop browsers. For best experience, use a modern browser like Chrome, Edge, or Firefox, keep your internet connection stable, and always log out from shared devices after use."
+  },
+
+  // 💻 REACT NATIVE & TECHNICAL QUESTIONS
+  {
+    question: "How do we fetch all products from the backend in React Native?",
+    answer: "Call your /products API using axios or fetch inside useEffect, store the result in state/Redux, and render the list using FlatList."
+  },
+  {
+    question: "Where should the API base URL be stored?",
+    answer: "Store it in a .env file using react-native-dotenv so you don't hardcode URLs inside components."
+  },
+  {
+    question: "How do I add a new product from the frontend?",
+    answer: "Send a POST request with formData (if image included) to your backend endpoint /products/add."
+  },
+  {
+    question: "How should images be uploaded from React Native?",
+    answer: "Use react-native-image-picker, convert the photo to FormData, and send via multipart upload."
+  },
+  {
+    question: "How does the backend store product images?",
+    answer: "Either store them on Cloudinary/S3 or save URL paths in MongoDB. Don't store raw files inside Mongo."
+  },
+  {
+    question: "How do we handle categories on the product list?",
+    answer: "Backend returns products grouped by category, or frontend filters products locally."
+  },
+  {
+    question: "Why do we need pagination for product listing?",
+    answer: "Because loading 500+ products at once will kill performance. Use backend pagination (?page=1&limit=10)."
+  },
+  {
+    question: "How do we display product details on a separate screen?",
+    answer: "Use React Navigation navigate('ProductDetails', { id }) and fetch product details inside that screen."
+  },
+  {
+    question: "How does the cart work in React Native?",
+    answer: "Cart is stored in Redux to persist across screens. Optionally sync to backend for logged-in users."
+  },
+  {
+    question: "Should cart be stored on backend or frontend?",
+    answer: "For guests: frontend. For logged-in users: sync to backend so cart works across devices."
+  },
+  {
+    question: "How do we prevent duplicate products from being added to cart?",
+    answer: "Check if product already exists in cart. If yes → increase quantity."
+  },
+  {
+    question: "How do we calculate total price in the cart?",
+    answer: "Use a reducer: cart.reduce((total, item) => total + item.price * item.qty, 0)"
+  },
+  {
+    question: "How do we handle product stock from backend?",
+    answer: "Backend should validate stock before confirming order. Never trust frontend."
+  },
+  {
+    question: "What happens if stock runs out while user is checking out?",
+    answer: "Backend returns 409 Conflict → 'Product out of stock' → user must refresh their cart."
+  },
+  {
+    question: "How do we implement product search?",
+    answer: "Backend search using regex: { name: { $regex: query, $options: 'i' } }"
+  },
+  {
+    question: "Should search be done on the frontend?",
+    answer: "No — large lists will choke the app. Always search from backend."
+  },
+  {
+    question: "How do we add product reviews?",
+    answer: "POST to /products/:id/review with rating + comment. One review per user enforced by backend."
+  },
+  {
+    question: "Why should reviews be stored separately in backend?",
+    answer: "So you can paginate, sort, and update them independently."
+  },
+  {
+    question: "How do we show loading while fetching products?",
+    answer: "Use ActivityIndicator or a skeleton loader."
+  },
+  {
+    question: "How do we handle no internet?",
+    answer: "Use NetInfo library and show an offline banner or retry button."
+  },
+  {
+    question: "How do we handle failed API calls?",
+    answer: "Catch errors → show message → let user retry manually. Don't retry automatically endlessly."
+  },
+  {
+    question: "How do we store user token?",
+    answer: "Use AsyncStorage and sync to Redux at app launch."
+  },
+  {
+    question: "Should token be stored in Redux?",
+    answer: "Yes for usage, but original token stays in AsyncStorage so user stays logged in."
+  },
+  {
+    question: "How do we protect private routes in React Native?",
+    answer: "If no token → redirect user to Login screen in React Navigation."
+  },
+  {
+    question: "How does checkout work step-by-step?",
+    answer: "Validate cart → Validate stock → Create order → Process payment → Mark order as paid → Reduce stock in DB"
+  },
+  {
+    question: "Where do we handle order creation logic?",
+    answer: "On backend only. Frontend just sends selected items."
+  },
+  {
+    question: "How do we store addresses for users?",
+    answer: "Store in Mongo inside user document: user.addresses = []"
+  },
+  {
+    question: "Why shouldn't addresses be stored only on frontend?",
+    answer: "User will lose them after reinstalling app."
+  },
+  {
+    question: "What payment gateway is easiest for React Native?",
+    answer: "Stripe — safest and most well-documented."
+  },
+  {
+    question: "Should payment logic be on the frontend?",
+    answer: "Absolutely not. Payment must be created on backend to prevent fraud."
+  },
+  {
+    question: "How do we restrict admin features like adding products?",
+    answer: "Backend checks user.role === 'admin'. Never trust frontend flags."
+  },
+  {
+    question: "Why does React Native need a different navigation library?",
+    answer: "Because mobile apps require real gestures and stack history."
+  },
+  {
+    question: "How do we handle screen transitions?",
+    answer: "Using react-navigation/native-stack for smooth animations."
+  },
+  {
+    question: "Should product images be compressed before uploading?",
+    answer: "Yes. Use react-native-image-crop-picker or expo-image-manipulator."
+  },
+  {
+    question: "How do we implement 'favorite products'?",
+    answer: "Store product IDs in user document → return favorites array."
+  },
+  {
+    question: "Do we need a wishlist in backend?",
+    answer: "Yes if you want wishlist to persist across devices."
+  },
+  {
+    question: "How do we show recently viewed products?",
+    answer: "Store last 10 viewed IDs in AsyncStorage, not backend."
+  },
+  {
+    question: "How do we handle different screen sizes?",
+    answer: "Use Dimensions or responsive UI libraries."
+  },
+  {
+    question: "How do we prevent app from crashing on large images?",
+    answer: "Resize/compress on upload. Never upload full-size camera images."
+  },
+  {
+    question: "Should product price be validated on frontend?",
+    answer: "No — backend handles all validation. Frontend only displays."
+  },
+  {
+    question: "How do we sync cart between devices?",
+    answer: "When user logs in → merge local cart with backend cart."
+  },
+  {
+    question: "How do we send push notifications for orders?",
+    answer: "Use Firebase Cloud Messaging. Backend triggers FCM on order updates."
+  },
+  {
+    question: "Should product filters be backend-based?",
+    answer: "Yes for large data sets → filter by category, price range, rating."
+  },
+  {
+    question: "How do we sort products (price low-high)?",
+    answer: "Backend Mongo query: .sort({ price: 1 })"
+  },
+  {
+    question: "How do we show product variants (size, color)?",
+    answer: "Define product schema like: variants: [{ size: String, color: String, stock: Number }]"
+  },
+  {
+    question: "What if a variant is out of stock?",
+    answer: "Disable that option in the UI."
+  },
+  {
+    question: "Should we preload product images?",
+    answer: "Yes, using Image.prefetch() for faster loading."
+  },
+  {
+    question: "How can we make product listing more performant?",
+    answer: "Use: FlatList with windowSize, Pagination, Lazy loading images, Memoized product card components"
+  },
+  {
+    question: "Should we allow guest checkout?",
+    answer: "Depends on business needs. Most apps support it to increase conversions."
+  },
+  {
+    question: "How do we cancel an order from frontend?",
+    answer: "Call /orders/:id/cancel, backend verifies status and updates order."
+  },
+
+  // 🚜 FARM CONNECT SPECIFIC QUESTIONS
+  {
+    question: "How does Farm Connect help remove middlemen?",
+    answer: "Farm Connect connects farmers directly with buyers through our digital marketplace, eliminating commission agents and allowing farmers to get better prices for their crops."
+  },
+  {
+    question: "What benefits do farmers get by using Farm Connect?",
+    answer: "Better prices, direct buyer access, weather alerts, expert farming guidance, input purchase at fair prices, and reduced dependency on middlemen."
+  },
+  {
+    question: "How can I sell my crops directly to buyers?",
+    answer: "List your crops in Marketplace section with quantity, quality details, and price. Buyers can contact you directly through the app."
+  },
+  {
+    question: "Is Farm Connect available in rural areas of Pakistan?",
+    answer: "Yes, Farm Connect works across Pakistan including rural areas. We support both English and Urdu languages for better accessibility."
+  },
+  {
+    question: "How does Farm Connect ensure fair prices?",
+    answer: "We provide real-time market rates, transparent pricing, and direct buyer-seller communication to ensure farmers get fair value for their produce."
+  },
+  {
+    question: "Can small farmers use Farm Connect?",
+    answer: "Absolutely! Farm Connect is designed for all farmers regardless of farm size. Small farmers can benefit from collective bargaining and direct market access."
+  },
+  {
+    question: "How does Farm Connect verify buyers and sellers?",
+    answer: "We verify users through CNIC verification and mobile number authentication to ensure a trusted trading environment."
+  },
+  {
+    question: "What crops can I trade on Farm Connect?",
+    answer: "All major crops including wheat, rice, cotton, sugarcane, fruits, vegetables, and pulses can be traded on our platform."
+  },
+  {
+    question: "How does Farm Connect handle payments?",
+    answer: "We provide secure payment options including bank transfer, mobile banking, and cash on delivery with transaction protection."
+  },
+  {
+    question: "Is there any commission fee for using Farm Connect?",
+    answer: "No, Farm Connect doesn't charge any commission from farmers. Our goal is to maximize farmers' profits by eliminating middlemen commissions."
+  },
+  {
+    question: "How can I get farming advice on Farm Connect?",
+    answer: "Use our expert guidance section for crop-specific advice, pest control solutions, and best farming practices tailored for Pakistani conditions."
+  },
+  {
+    question: "Does Farm Connect provide delivery services?",
+    answer: "We facilitate delivery through trusted logistics partners, ensuring safe and timely transportation of your agricultural products."
+  },
+  {
+    question: "How do I report issues on Farm Connect?",
+    answer: "Use the Support section to report any issues. Our team responds within 24 hours to resolve problems."
+  },
+  {
+    question: "Can I use Farm Connect in Urdu?",
+    answer: "Yes, Farm Connect supports both English and Urdu languages for better user experience."
+  },
+  {
+    question: "How does Farm Connect help with input costs?",
+    answer: "We connect farmers directly with manufacturers and distributors, reducing input costs by eliminating multiple layers of distributors."
+  },
+  {
+    question: "What makes Farm Connect different from other apps?",
+    answer: "Farm Connect focuses specifically on removing middlemen, providing complete farming solutions, and is tailored for Pakistani agricultural conditions."
+  },
+  {
+    question: "How can I trust the quality of products bought through Farm Connect?",
+    answer: "We have quality verification processes, user ratings, and reviews to ensure you get genuine agricultural inputs."
+  },
+  {
+    question: "Does Farm Connect work offline?",
+    answer: "Basic features work offline, but for real-time trading and updates, internet connection is required."
+  },
+  {
+    question: "How can I become a verified seller on Farm Connect?",
+    answer: "Complete your profile with CNIC verification and provide necessary documents to become a trusted seller on our platform."
   }
 ];
