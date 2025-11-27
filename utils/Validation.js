@@ -17,9 +17,10 @@ export const validation = async (next, Name, email, password, phone, address) =>
         throw new Error("Validation failed");
     }
     //checking password length and validity
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    // Password regex with all special characters: !@#$%^&*()_+-=[]{}|;:'",.<>?/~
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:'",.<>?/~])[A-Za-z\d!@#$%^&*()_+\-=\[\]{}|;:'",.<>?/~]{8,}$/;
     if (!passwordRegex.test(password)) {
-        next(new ErrorHandler("Password must be at least 8 characters long and include uppercase, lowercase, number, and special character.", 400));
+        next(new ErrorHandler("Password must be at least 8 characters long and include uppercase, lowercase, number, and special character (!@#$%^&*()_+-=[]{}|;:'\",.<>?/~).", 400));
         throw new Error("Validation failed");
     }
     //checking phone number
