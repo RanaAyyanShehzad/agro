@@ -84,7 +84,11 @@ if(quantity<=0 && quantity>=1000){
 export const getAllProducts = async (req, res, next) => {
   try {
     const sortBy = req.query.sort || "rating"; // optional query param: rating, positive, etc.
-    const products = await product.find();
+    // Exclude soft-deleted and inactive products
+    const products = await product.find({ 
+      isDeleted: false, 
+      isActive: true 
+    });
 
     // Enrich each product with average rating and sentiment counts
     const enrichedProducts = await Promise.all(products.map(async (p) => {
@@ -128,8 +132,11 @@ export const getAllProductsForFarmer = async (req, res, next) => {
       return next(new ErrorHandler("Only farmers can access this route", 403));
     }
 
+    // Exclude soft-deleted, inactive products, and user's own products
     const products = await product.find({
       isAvailable: true,
+      isDeleted: false,
+      isActive: true,
       "upLoadedBy.userID": { $ne: userId }
     });
 
@@ -173,6 +180,7 @@ export const getMyProduct = async (req, res, next) => {
             return next(new ErrorHandler("Buyers do not have products", 403));
         }
 
+        // Get all products including soft-deleted ones for the owner
         const products = await product.find({ "upLoadedBy.userID": userId });
         res.status(200).json({ success: true, products });
     } catch (error) {
@@ -256,9 +264,18 @@ export const getProductDetails = async (req, res, next) => {
     try {
         const { productId } = req.params;
 
-        // Find the product
+        // Find the product (including deleted ones for viewing)
         const productData = await product.findById(productId);
         if (!productData) {
+            return next(new ErrorHandler("Product not found", 404));
+        }
+
+        // Check if product is deleted (non-owners cannot view deleted products)
+        const { userId, role } = getUserAndRole(req);
+        const isOwner = productData.upLoadedBy.userID.toString() === userId.toString() &&
+            productData.upLoadedBy.role === role;
+        
+        if (productData.isDeleted && !isOwner && role !== "admin") {
             return next(new ErrorHandler("Product not found", 404));
         }
 

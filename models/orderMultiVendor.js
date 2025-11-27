@@ -1,6 +1,9 @@
 import mongoose from "mongoose";
 
 const productItemSchema = new mongoose.Schema({
+  // Note: productId may reference a soft-deleted product
+  // Orders maintain a snapshot of product info (name, price, quantity)
+  // Even if product is deleted, order remains valid and functional
   productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Products",

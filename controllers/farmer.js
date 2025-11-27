@@ -278,18 +278,51 @@ export const deleteProfile = async (req, res, next) => {
     // Verify farmer role
     verifyUserRole(req.cookies.token, "farmer", next);
 
-    let user = await farmer.findById(req.user._id);
-    if (!user) return next(new ErrorHandler("Delete Failed", 404));
+    const userId = req.user._id;
+    let user = await farmer.findById(userId);
+    if (!user) return next(new ErrorHandler("Farmer not found", 404));
+
+    // Check if already deleted
+    if (user.isAccountDeleted) {
+      return next(new ErrorHandler("Account already deleted", 400));
+    }
+
     const email = user.email;
     const name = user.name;
-    await user.deleteOne();
-    await sendEmail(email, "Account deleted successfully", `${name}, your account has been deleted successfully`);
+
+    // Soft delete farmer account
+    user.isAccountDeleted = true;
+    user.isActive = false;
+    user.deletedAt = new Date();
+    await user.save();
+
+    // Soft delete all farmer's products
+    await product.updateMany(
+      { 
+        "upLoadedBy.userID": userId,
+        "upLoadedBy.role": "farmer"
+      },
+      {
+        $set: {
+          isActive: false,
+          isDeleted: true,
+          isAvailable: false,
+          deletedAt: new Date()
+        }
+      }
+    );
+
+    await sendEmail(
+      email, 
+      "Account deleted successfully", 
+      `${name}, your account has been deleted successfully. All your products have been removed from the marketplace.`
+    );
 
     res.status(200)
       .clearCookie("token")
       .json({
         success: true,
-        message: "Profile deleted successfully",
+        message: "Profile deleted successfully. All your products have been removed.",
       });
   } catch (error) {
     next(error);

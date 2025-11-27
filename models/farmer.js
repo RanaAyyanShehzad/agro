@@ -40,9 +40,21 @@ const schema = new mongoose.Schema({
       },failedLoginAtempt:{
         type:Number,
         default:0,
-      },lockUntil:{
+      },      lockUntil:{
         type:Date,
       },
+      isAccountDeleted: {
+        type: Boolean,
+        default: false
+      },
+      isActive: {
+        type: Boolean,
+        default: true
+      },
+      deletedAt: {
+        type: Date,
+        default: null
+      }
       },{
         timestamps:true,
       });

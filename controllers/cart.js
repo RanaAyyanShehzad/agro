@@ -17,6 +17,7 @@ export const addToCart = async (req, res, next) => {
 
     const productDoc = await product.findById(productId);
     if (!productDoc) return next(new ErrorHandler("Product not found", 404));
+    if (productDoc.isDeleted || !productDoc.isActive) return next(new ErrorHandler("Product is not available", 400));
     if (!productDoc.isAvailable) return next(new ErrorHandler("Product is not available", 400));
 
     if (quantity > productDoc.quantity) {

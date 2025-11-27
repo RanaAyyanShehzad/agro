@@ -238,12 +238,29 @@ export const deleteProfile = async (req, res, next) => {
     // Verify buyer role
     verifyUserRole(req.cookies.token, "buyer", next);
 
-    let user = await buyer.findById(req.user._id);
-    if (!user) return next(new ErrorHandler("Delete Failed", 404));
+    const userId = req.user._id;
+    let user = await buyer.findById(userId);
+    if (!user) return next(new ErrorHandler("Buyer not found", 404));
+
+    // Check if already deleted
+    if (user.isAccountDeleted) {
+      return next(new ErrorHandler("Account already deleted", 400));
+    }
+
     const email = user.email;
     const name = user.name;
-    await user.deleteOne();
-    await sendEmail(email, "Account deleted successfully", `${name}, your account has been deleted successfully`);
+
+    // Soft delete buyer account
+    user.isAccountDeleted = true;
+    user.isActive = false;
+    user.deletedAt = new Date();
+    await user.save();
+
+    await sendEmail(
+      email, 
+      "Account deleted successfully", 
+      `${name}, your account has been deleted successfully.`
+    );
 
     res.status(200)
       .clearCookie("token")
@@ -252,11 +269,7 @@ export const deleteProfile = async (req, res, next) => {
         message: "Profile deleted successfully",
       });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Can not Delete",
-      error: error.message,
-    });
+    next(error);
   }
 };
 

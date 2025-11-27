@@ -38,10 +38,23 @@ const schema = mongoose.Schema({
     },category:{
         type:String,
         trim:true,
-    },isAvailable:{
+    },    isAvailable:{
         type:Boolean,
         default:true,
-    },images:{
+    },
+    isActive: {
+        type: Boolean,
+        default: true
+    },
+    isDeleted: {
+        type: Boolean,
+        default: false
+    },
+    deletedAt: {
+        type: Date,
+        default: null
+    },
+    images:{
         type:[String],
         required:true,
     },
