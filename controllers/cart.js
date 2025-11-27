@@ -3,6 +3,7 @@ import { product } from "../models/products.js";
 import ErrorHandler from "../middlewares/error.js";
 import jwt from "jsonwebtoken";
 import { updateCartExpiration } from "../utils/cartUtils.js";
+import { handleZeroQuantity } from "../utils/features.js";
 
 // ---------------------- ADD TO CART ----------------------
 export const addToCart = async (req, res, next) => {
@@ -26,6 +27,8 @@ export const addToCart = async (req, res, next) => {
     if (productDoc.quantity < 0) productDoc.quantity = 0;
 
     await productDoc.save();
+    // Handle zero quantity - set isAvailable to false or delete
+    await handleZeroQuantity(productDoc);
 
     // Prevent farmer from buying their own product
     const uploaderId = productDoc.upLoadedBy.userID;
@@ -188,6 +191,7 @@ export const removeFromCart = async (req, res, next) => {
     const prod = await product.findById(removedItem.productId);
     if (prod) {
       prod.quantity += removedItem.quantity;
+      prod.isAvailable = true; // Make available again if quantity is restored
       await prod.save();
     }
 
@@ -219,6 +223,7 @@ export const clearCart = async (req, res, next) => {
         const prod = await product.findById(item.productId._id);
         if (prod) {
           prod.quantity += item.quantity;
+          prod.isAvailable = true; // Make available again if quantity is restored
           await prod.save();
         }
       }
@@ -269,9 +274,12 @@ export const updateCartItem = async (req, res, next) => {
 
       productDoc.quantity -= difference;
       await productDoc.save();
+      // Handle zero quantity - set isAvailable to false or delete
+      await handleZeroQuantity(productDoc);
     } else if (difference < 0) {
       // user decreased quantity → restore stock
       productDoc.quantity += Math.abs(difference);
+      productDoc.isAvailable = true; // Make available again if quantity is restored
       await productDoc.save();
     }
 

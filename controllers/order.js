@@ -127,10 +127,41 @@ export const updateOrderStatus = async (req, res, next) => {
       return next(new ErrorHandler("You don't have permission to update this order", 403));
     }
 
+    const oldStatus = order.status;
     order.status = status;
     if (status === 'delivered') order.deliveryInfo.actualDeliveryDate = new Date();
 
     await order.save();
+
+    // Send email notification to customer about status update
+    try {
+      let customer = null;
+      if (order.userRole === "buyer") {
+        customer = await buyer.findById(order.userId);
+      } else if (order.userRole === "farmer") {
+        customer = await farmer.findById(order.userId);
+      }
+
+      if (customer && customer.email) {
+        const statusMessages = {
+          pending: "Your order is pending confirmation.",
+          processing: "Your order is being processed and prepared for shipment.",
+          shipped: "Your order has been shipped and is on its way to you.",
+          delivered: "Your order has been delivered successfully. Thank you for your purchase!",
+          canceled: "Your order has been canceled."
+        };
+
+        const statusMessage = statusMessages[status] || `Your order status has been updated to ${status}.`;
+        const emailSubject = `Order Status Update - ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+        const emailText = `Dear ${customer.name},\n\nYour order #${orderId} status has been updated from "${oldStatus}" to "${status}".\n\n${statusMessage}\n\nThank you for shopping with us!`;
+
+        await sendEmail(customer.email, emailSubject, emailText);
+      }
+    } catch (emailError) {
+      // Log email error but don't fail the request
+      console.error("Failed to send order status email:", emailError);
+    }
+
     res.status(200).json({ success: true, message: "Order status updated successfully", order });
   } catch (error) {
     next(error);

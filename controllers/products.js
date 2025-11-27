@@ -1,6 +1,6 @@
 import ErrorHandler from "../middlewares/error.js";
 import { product } from "../models/products.js";
-import { successMessage } from "../utils/features.js";
+import { successMessage, handleZeroQuantity } from "../utils/features.js";
 import { farmer } from "../models/farmer.js";
 import { supplier } from "../models/supplier.js";
 import { buyer } from "../models/buyer.js";
@@ -243,6 +243,8 @@ export const updateProduct = async (req, res, next) => {
         });
 
         await productToUpdate.save();
+        // Handle zero quantity - set isAvailable to false or delete
+        await handleZeroQuantity(productToUpdate);
         successMessage(res, "Product updated successfully", 200);
     } catch (error) {
         next(error);

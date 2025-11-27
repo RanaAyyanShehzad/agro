@@ -4,7 +4,7 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
   const token = jwt.sign(
     { _id: user._id, role },
     process.env.JWT_SECRET,
-    { expiresIn: "24h" }
+    { expiresIn: "1h" }
   );
 
   const isProduction = process.env.NODE_ENV === "production";
@@ -15,7 +15,7 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
       httpOnly: true,
       secure: isProduction,
       sameSite: isProduction ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 1 * 60 * 60 * 1000,
     })
   .json({
     success: true,
@@ -29,5 +29,17 @@ export const successMessage=(res,message,statusCode=200)=>{
         success:true,
         message,
     });
+};
+
+// Helper function to handle product quantity becoming zero
+export const handleZeroQuantity = async (productDoc) => {
+    if (productDoc.quantity <= 0) {
+        // Option 1: Set isAvailable to false (keeps product data)
+        productDoc.isAvailable = false;
+        await productDoc.save();
+        
+        // Option 2: Delete the product (uncomment if preferred)
+        // await productDoc.deleteOne();
+    }
 };
 

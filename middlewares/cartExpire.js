@@ -13,10 +13,10 @@ export const checkCartExpiration = async (req, res, next) => {
         cart.lastActivity = new Date();
         
         // Refresh expiration date if cart is about to expire (e.g., less than 24 hours left)
-        const oneDayFromNow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const oneDayFromNow = new Date(Date.now() + 1 * 60 * 60 * 1000);
         if (cart.expiresAt < oneDayFromNow) {
           // Reset expiration to 7 days from now
-          cart.expiresAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+          cart.expiresAt = new Date(Date.now() + 1 * 60 * 60 * 1000);
         }
         
         await cart.save();
