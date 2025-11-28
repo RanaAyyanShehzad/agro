@@ -59,8 +59,8 @@ export const createOrder = async (req, res, next) => {
     );
 
     // Only buyers can place orders in multi-vendor system
-    if (decode !== "buyer") {
-      return next(new ErrorHandler("Only buyers can place orders", 403));
+    if (decode === "supplier") {
+      return next(new ErrorHandler("Only buyers and farmers can place orders", 403));
     }
 
     const orderData = {
