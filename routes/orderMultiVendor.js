@@ -20,7 +20,7 @@ router.use(isAuthenticated);
  * Update product status in an order
  * Only the farmer/supplier who owns that product can update its status
  */
-router.put(
+router.patch(
   "/order/:orderId/product/:productId/status",
   isProductOwner,
   updateProductStatus
@@ -31,7 +31,7 @@ router.put(
  * Cancel an order
  * Only the buyer who placed the order can cancel
  */
-router.put(
+router.patch(
   "/order/:orderId/cancel",
   canCancelOrder,
   cancelOrder

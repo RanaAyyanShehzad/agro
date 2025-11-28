@@ -14,6 +14,7 @@ import cookieParser from "cookie-parser";
 import { errorMiddleware } from "./middlewares/error.js";
 import weatherRoutes from "./routes/weatherRoutes.js";
 import chatbotRoutes from "./routes/chatbotRoutes.js";
+import orderMultiVendorRoutes from "./routes/orderMultiVendor.js";
 import { checkAuth } from "./utils/verifyToken.js";
 
 // Initialize Express app
@@ -32,7 +33,8 @@ app.use(cookieParser());
 app.use(cors({
   origin: true, // Reflects the request origin
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 }));
 
 
@@ -49,6 +51,7 @@ app.use("/api/buyers", buyerRoutes);
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/v1/order", orderRoutes);
+app.use("/api/v1", orderMultiVendorRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/review",reviewRoutes);
