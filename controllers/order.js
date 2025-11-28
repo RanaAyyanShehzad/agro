@@ -1,4 +1,5 @@
 import { Order } from '../models/order.js';
+import { OrderMultiVendor } from '../models/orderMultiVendor.js';
 import { Cart } from '../models/cart.js';
 import jwt from "jsonwebtoken";
 import ErrorHandler from '../middlewares/error.js';
@@ -7,6 +8,7 @@ import { farmer } from '../models/farmer.js';
 import { sendEmail } from "../utils/sendEmail.js";
 import { supplier } from '../models/supplier.js';
 import { product } from '../models/products.js';
+import { calculateOrderStatus } from '../utils/orderHelpers.js';
 
 const getRole = (req) => {
   const { token } = req.cookies;
@@ -27,10 +29,43 @@ export const createOrder = async (req, res, next) => {
 
     let user = decode === "buyer" ? await buyer.findById(userId) : await farmer.findById(userId);
 
+    // Build products array with farmerId/supplierId and price for OrderMultiVendor
+    const productsWithVendorInfo = await Promise.all(
+      cart.products.map(async (p) => {
+        const dbProduct = await product.findById(p.productId._id);
+        if (!dbProduct) {
+          throw new ErrorHandler(`Product ${p.productId._id} not found`, 404);
+        }
+
+        const { userID, role } = dbProduct.upLoadedBy;
+        const productItem = {
+          productId: p.productId._id,
+          quantity: p.quantity,
+          price: dbProduct.price,
+          status: "processing"
+        };
+
+        // Add farmerId or supplierId based on product owner
+        if (role === "farmer") {
+          productItem.farmerId = userID;
+          productItem.supplierId = null;
+        } else if (role === "supplier") {
+          productItem.supplierId = userID;
+          productItem.farmerId = null;
+        }
+
+        return productItem;
+      })
+    );
+
+    // Only buyers can place orders in multi-vendor system
+    if (decode !== "buyer") {
+      return next(new ErrorHandler("Only buyers can place orders", 403));
+    }
+
     const orderData = {
-      userId: cart.userId,
-      userRole: cart.userRole,
-      products: cart.products.map(p => ({ productId: p.productId._id, quantity: p.quantity })),
+      buyerId: userId,
+      products: productsWithVendorInfo,
       totalPrice: cart.totalPrice,
       cartId: cart._id,
       paymentInfo: { method: paymentMethod, status: "pending" },
@@ -38,11 +73,15 @@ export const createOrder = async (req, res, next) => {
       notes
     };
 
+    // Calculate initial order status based on product statuses
+    const tempOrder = { products: productsWithVendorInfo };
+    orderData.orderStatus = calculateOrderStatus(tempOrder);
+
     let savedOrder = null;
     let cartDeleted = false;
 
     try {
-      const order = new Order(orderData);
+      const order = new OrderMultiVendor(orderData);
       savedOrder = await order.save();
 
       const uniqueSuppliers = new Map();
@@ -68,10 +107,22 @@ export const createOrder = async (req, res, next) => {
         await sendEmail(email, "New Order Received", "Your product(s) were ordered. Check your dashboard.");
       }
 
-      // <-- populate here
+      // Populate order with product and vendor information
       await savedOrder.populate({
         path: "products.productId",
         model: "Products",
+      });
+      await savedOrder.populate({
+        path: "products.farmerId",
+        select: "name email",
+      });
+      await savedOrder.populate({
+        path: "products.supplierId",
+        select: "name email",
+      });
+      await savedOrder.populate({
+        path: "buyerId",
+        select: "name email",
       });
 
       await Cart.findByIdAndDelete(cartId);
@@ -81,7 +132,7 @@ export const createOrder = async (req, res, next) => {
 
       return res.status(201).json({ success: true, message: "Order created successfully", order: savedOrder });
     } catch (innerError) {
-      if (savedOrder && !cartDeleted) await Order.findByIdAndDelete(savedOrder._id);
+      if (savedOrder && !cartDeleted) await OrderMultiVendor.findByIdAndDelete(savedOrder._id);
       throw innerError;
     }
   } catch (error) {
