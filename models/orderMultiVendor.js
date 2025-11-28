@@ -37,10 +37,15 @@ const productItemSchema = new mongoose.Schema({
 }, { _id: true });
 
 const orderSchema = new mongoose.Schema({
-  buyerId: {
+  customerId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Buyer",
-    required: [true, "Buyer ID is required"]
+    required: [true, "Customer ID is required"],
+    refPath: "customerModel"
+  },
+  customerModel: {
+    type: String,
+    required: true,
+    enum: ["Buyer", "Farmer"]
   },
   products: {
     type: [productItemSchema],
@@ -137,7 +142,7 @@ const orderSchema = new mongoose.Schema({
 });
 
 // Indexes for performance
-orderSchema.index({ buyerId: 1 });
+orderSchema.index({ customerId: 1 });
 orderSchema.index({ orderStatus: 1 });
 orderSchema.index({ "products.farmerId": 1 });
 orderSchema.index({ "products.supplierId": 1 });

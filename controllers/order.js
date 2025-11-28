@@ -27,7 +27,15 @@ export const createOrder = async (req, res, next) => {
     if (!cart) return next(new ErrorHandler("Cart not found or doesn't belong to you", 404));
     if (cart.products.length === 0) return next(new ErrorHandler("Cannot create order with empty cart", 400));
 
-    let user = decode === "buyer" ? await buyer.findById(userId) : await farmer.findById(userId);
+    let user = null;
+    if (decode === "buyer") {
+      user = await buyer.findById(userId);
+    } else if (decode === "farmer") {
+      user = await farmer.findById(userId);
+    }
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
 
     // Build products array with farmerId/supplierId and price for OrderMultiVendor
     const productsWithVendorInfo = await Promise.all(
@@ -58,13 +66,14 @@ export const createOrder = async (req, res, next) => {
       })
     );
 
-    // Only buyers can place orders in multi-vendor system
+    // Only buyers and farmers can place orders in multi-vendor system
     if (decode === "supplier") {
-      return next(new ErrorHandler("Only buyers and farmers can place orders", 403));
+      return next(new ErrorHandler("Suppliers cannot place orders", 403));
     }
 
     const orderData = {
-      buyerId: userId,
+      customerId: userId,
+      customerModel: decode === "buyer" ? "Buyer" : "Farmer",
       products: productsWithVendorInfo,
       totalPrice: cart.totalPrice,
       cartId: cart._id,
@@ -121,8 +130,8 @@ export const createOrder = async (req, res, next) => {
         select: "name email",
       });
       await savedOrder.populate({
-        path: "buyerId",
-        select: "name email",
+        path: "customerId",
+        select: "name email phone address",
       });
 
       await Cart.findByIdAndDelete(cartId);
@@ -145,10 +154,10 @@ export const getUserOrders = async (req, res, next) => {
     const userId = req.user.id;
     const userRole = getRole(req).role;
     
-    // Use OrderMultiVendor for buyers (new orders)
+    // Use OrderMultiVendor for buyers/farmers (new orders)
     if (userRole === "buyer" || userRole === "farmer" ) {
-      const orders = await OrderMultiVendor.find({ buyerId: userId })
-        .populate("buyerId", "name email")
+      const orders = await OrderMultiVendor.find({ customerId: userId })
+        .populate("customerId", "name email phone address")
         .populate("products.productId")
         .populate("products.farmerId", "name email")
         .populate("products.supplierId", "name email")
@@ -325,7 +334,7 @@ export const getSupplierOrders = async (req, res, next) => {
 
     // Get all orders and filter by vendor's products
     const allOrders = await OrderMultiVendor.find()
-      .populate("buyerId", "name email phone address")
+      .populate("customerId", "name email phone address")
       .populate("products.productId")
       .populate("products.farmerId", "name email phone")
       .populate("products.supplierId", "name email phone")
@@ -360,11 +369,11 @@ export const getSupplierOrders = async (req, res, next) => {
           ...order,
           products: vendorProducts,
           totalPrice: vendorTotalPrice,
-          customer: order.buyerId ? {
-            name: order.buyerId.name || "N/A",
-            email: order.buyerId.email || "N/A",
-            phone: order.buyerId.phone || "N/A",
-            address: order.buyerId.address || "N/A"
+          customer: order.customerId ? {
+            name: order.customerId.name || "N/A",
+            email: order.customerId.email || "N/A",
+            phone: order.customerId.phone || order.shippingAddress?.phoneNumber || "N/A",
+            address: order.customerId.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
           } : {
             name: "N/A",
             email: "N/A",

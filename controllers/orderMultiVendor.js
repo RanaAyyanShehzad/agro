@@ -1,10 +1,6 @@
 import { OrderMultiVendor } from "../models/orderMultiVendor.js";
 import { calculateOrderStatus } from "../utils/orderHelpers.js";
 import ErrorHandler from "../middlewares/error.js";
-import { buyer } from "../models/buyer.js";
-import { farmer } from "../models/farmer.js";
-import { supplier } from "../models/supplier.js";
-import jwt from "jsonwebtoken";
 import { getRole } from "../middlewares/orderMiddleware.js";
 
 /**
@@ -34,7 +30,7 @@ export const updateProductStatus = async (req, res, next) => {
 
     // Populate and return updated order
     const updatedOrder = await OrderMultiVendor.findById(order._id)
-      .populate("buyerId", "name email")
+      .populate("customerId", "name email phone address")
       .populate("products.productId")
       .populate("products.farmerId", "name email")
       .populate("products.supplierId", "name email")
@@ -72,7 +68,7 @@ export const cancelOrder = async (req, res, next) => {
 
     // Populate and return updated order
     const updatedOrder = await OrderMultiVendor.findById(order._id)
-      .populate("buyerId", "name email")
+      .populate("customerId", "name email phone address")
       .populate("products.productId")
       .populate("products.farmerId", "name email")
       .populate("products.supplierId", "name email")
@@ -104,7 +100,7 @@ export const getOrderDetails = async (req, res, next) => {
     }
 
     const order = await OrderMultiVendor.findById(orderId)
-      .populate("buyerId", "name email phone address")
+      .populate("customerId", "name email phone address")
       .populate("products.productId")
       .populate("products.farmerId", "name email phone")
       .populate("products.supplierId", "name email phone")
@@ -116,7 +112,7 @@ export const getOrderDetails = async (req, res, next) => {
 
     // Check authorization
     // Buyers can only see their own orders
-    if (userRole === "buyer" && order.buyerId._id.toString() !== userId) {
+    if ((userRole === "buyer" || userRole === "farmer") && order.customerId?._id?.toString() !== userId) {
       return next(new ErrorHandler("You are not authorized to view this order", 403));
     }
 
@@ -139,7 +135,15 @@ export const getOrderDetails = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      order
+      order: {
+        ...order,
+        customer: order.customerId ? {
+          name: order.customerId.name || "N/A",
+          email: order.customerId.email || "N/A",
+          phone: order.customerId.phone || order.shippingAddress?.phoneNumber || "N/A",
+          address: order.customerId.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+        } : null
+      }
     });
   } catch (error) {
     next(error);

@@ -21,8 +21,8 @@ export const isOrderBuyer = async (req, res, next) => {
     const userId = req.user._id.toString();
     const { role } = getRole(req);
 
-    if (role !== "buyer") {
-      return next(new ErrorHandler("Only buyers can perform this action", 403));
+    if (role !== "buyer" && role !== "farmer") {
+      return next(new ErrorHandler("Only customers can perform this action", 403));
     }
 
     const order = await OrderMultiVendor.findById(orderId);
@@ -30,7 +30,7 @@ export const isOrderBuyer = async (req, res, next) => {
       return next(new ErrorHandler("Order not found", 404));
     }
 
-    if (order.buyerId.toString() !== userId) {
+    if (order.customerId.toString() !== userId) {
       return next(new ErrorHandler("You are not authorized to access this order", 403));
     }
 
@@ -98,8 +98,8 @@ export const canCancelOrder = async (req, res, next) => {
     const userId = req.user._id.toString();
     const { role } = getRole(req);
 
-    if (role !== "buyer") {
-      return next(new ErrorHandler("Only buyers can cancel orders", 403));
+    if (role !== "buyer" && role !== "farmer") {
+      return next(new ErrorHandler("Only customers can cancel orders", 403));
     }
 
     const order = await OrderMultiVendor.findById(orderId);
@@ -107,7 +107,7 @@ export const canCancelOrder = async (req, res, next) => {
       return next(new ErrorHandler("Order not found", 404));
     }
 
-    if (order.buyerId.toString() !== userId) {
+    if (order.customerId.toString() !== userId) {
       return next(new ErrorHandler("You are not authorized to cancel this order", 403));
     }
 
