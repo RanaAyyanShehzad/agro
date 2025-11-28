@@ -17,6 +17,15 @@ import {
   validateAddress
 } from "../utils/authUtils.js";
 import { admin } from "../models/admin.js";
+import { buyer } from "../models/buyer.js";
+import { farmer } from "../models/farmer.js";
+import { supplier } from "../models/supplier.js";
+import { product } from "../models/products.js";
+import { ProductCategory } from "../models/productCategory.js";
+import { SystemConfig, CONFIG_KEYS } from "../models/systemConfig.js";
+import { Dispute } from "../models/dispute.js";
+import { Order } from "../models/order.js";
+import { OrderMultiVendor } from "../models/orderMultiVendor.js";
 
 
 // Controller functions
@@ -379,6 +388,588 @@ export const resetPassword = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: "Password reset successful",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// ADMIN MANAGEMENT FUNCTIONS
+// ============================================
+
+/**
+ * Get all users (including soft-deleted and security fields)
+ */
+export const getAllUsers = async (req, res, next) => {
+  try {
+    const { role, includeDeleted, page = 1, limit = 50 } = req.query;
+    
+    const filter = {};
+    if (role) {
+      filter.role = role;
+    }
+    if (includeDeleted !== "true") {
+      filter.isAccountDeleted = false;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get users from all collections
+    const buyers = await buyer.find(role === "buyer" || !role ? filter : { _id: null })
+      .select("+failedLoginAtempt +lockUntil")
+      .skip(role === "buyer" || !role ? skip : 0)
+      .limit(role === "buyer" || !role ? parseInt(limit) : 0)
+      .lean();
+    
+    const farmers = await farmer.find(role === "farmer" || !role ? filter : { _id: null })
+      .select("+failedLoginAtempt +lockUntil")
+      .skip(role === "farmer" || !role ? skip : 0)
+      .limit(role === "farmer" || !role ? parseInt(limit) : 0)
+      .lean();
+    
+    const suppliers = await supplier.find(role === "supplier" || !role ? filter : { _id: null })
+      .select("+failedLoginAtempt +lockUntil")
+      .skip(role === "supplier" || !role ? skip : 0)
+      .limit(role === "supplier" || !role ? parseInt(limit) : 0)
+      .lean();
+
+    // Combine and format users
+    const allUsers = [
+      ...buyers.map(u => ({ ...u, role: "buyer" })),
+      ...farmers.map(u => ({ ...u, role: "farmer" })),
+      ...suppliers.map(u => ({ ...u, role: "supplier" }))
+    ];
+
+    res.status(200).json({
+      success: true,
+      count: allUsers.length,
+      users: allUsers
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Add a new user (Admin can create users)
+ */
+export const addUser = async (req, res, next) => {
+  try {
+    const { name, email, password, phone, address, role, img } = req.body;
+
+    if (!name || !email || !password || !phone || !address || !role) {
+      return next(new ErrorHandler("All fields are required", 400));
+    }
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role. Must be buyer, farmer, or supplier", 400));
+    }
+
+    await validation(next, name, email, password, phone, address);
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    // Check if user exists
+    const existingUser = await UserModel.findOne({ email });
+    if (existingUser) {
+      return next(new ErrorHandler(`${role} with this email already exists`, 409));
+    }
+
+    const newUser = await UserModel.create({
+      name,
+      email,
+      password: await hashPassword(password),
+      phone,
+      address,
+      img: img || "",
+      verified: true // Admin-created users are auto-verified
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `${role} created successfully`,
+      user: {
+        _id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        role
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete a user (soft delete)
+ */
+export const deleteUser = async (req, res, next) => {
+  try {
+    const { userId, role } = req.params;
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role", 400));
+    }
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    // Soft delete
+    user.isAccountDeleted = true;
+    user.isActive = false;
+    user.deletedAt = new Date();
+    await user.save();
+
+    // If farmer/supplier, soft delete their products
+    if (role === "farmer" || role === "supplier") {
+      await product.updateMany(
+        { "upLoadedBy.userID": userId },
+        { 
+          isDeleted: true, 
+          isActive: false, 
+          deletedAt: new Date() 
+        }
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `${role} deleted successfully`
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Toggle user account status (lock/unlock, activate/deactivate)
+ */
+export const toggleUserStatus = async (req, res, next) => {
+  try {
+    const { userId, role } = req.params;
+    const { action, lockDuration } = req.body; // action: "lock", "unlock", "activate", "deactivate"
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role", 400));
+    }
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    switch (action) {
+      case "lock":
+        const duration = lockDuration ? parseInt(lockDuration) : 30; // minutes, default 30
+        user.lockUntil = new Date(Date.now() + duration * 60 * 1000);
+        user.isActive = false;
+        break;
+      case "unlock":
+        user.lockUntil = null;
+        user.failedLoginAtempt = 0;
+        user.isActive = true;
+        break;
+      case "activate":
+        user.isActive = true;
+        user.lockUntil = null;
+        break;
+      case "deactivate":
+        user.isActive = false;
+        break;
+      default:
+        return next(new ErrorHandler("Invalid action. Use: lock, unlock, activate, or deactivate", 400));
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: `User ${action}ed successfully`,
+      user: {
+        _id: user._id,
+        name: user.name,
+        isActive: user.isActive,
+        lockUntil: user.lockUntil
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Permanently delete (hard delete) soft-deleted users
+ */
+export const hardDeleteUser = async (req, res, next) => {
+  try {
+    const { userId, role } = req.params;
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role", 400));
+    }
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    if (!user.isAccountDeleted) {
+      return next(new ErrorHandler("User is not soft-deleted. Use delete endpoint first.", 400));
+    }
+
+    // Hard delete
+    await UserModel.findByIdAndDelete(userId);
+
+    res.status(200).json({
+      success: true,
+      message: `${role} permanently deleted`
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// PRODUCT CATEGORY MANAGEMENT
+// ============================================
+
+/**
+ * Create a new product category
+ */
+export const createCategory = async (req, res, next) => {
+  try {
+    const { name, description } = req.body;
+    const adminId = req.adminId;
+
+    if (!name || !name.trim()) {
+      return next(new ErrorHandler("Category name is required", 400));
+    }
+
+    const existingCategory = await ProductCategory.findOne({ name: name.trim() });
+    if (existingCategory) {
+      return next(new ErrorHandler("Category with this name already exists", 409));
+    }
+
+    const category = await ProductCategory.create({
+      name: name.trim(),
+      description: description?.trim() || "",
+      createdBy: adminId
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Category created successfully",
+      category
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get all product categories
+ */
+export const getAllCategories = async (req, res, next) => {
+  try {
+    const { includeInactive = "false" } = req.query;
+    
+    const filter = {};
+    if (includeInactive !== "true") {
+      filter.isActive = true;
+    }
+
+    const categories = await ProductCategory.find(filter)
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: categories.length,
+      categories
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update a product category
+ */
+export const updateCategory = async (req, res, next) => {
+  try {
+    const { categoryId } = req.params;
+    const { name, description, isActive } = req.body;
+    const adminId = req.adminId;
+
+    const category = await ProductCategory.findById(categoryId);
+    if (!category) {
+      return next(new ErrorHandler("Category not found", 404));
+    }
+
+    if (name && name.trim()) {
+      const existingCategory = await ProductCategory.findOne({ 
+        name: name.trim(), 
+        _id: { $ne: categoryId } 
+      });
+      if (existingCategory) {
+        return next(new ErrorHandler("Category with this name already exists", 409));
+      }
+      category.name = name.trim();
+    }
+
+    if (description !== undefined) {
+      category.description = description?.trim() || "";
+    }
+
+    if (isActive !== undefined) {
+      category.isActive = isActive;
+    }
+
+    category.updatedBy = adminId;
+    await category.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Category updated successfully",
+      category
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete a product category (soft delete by setting isActive to false)
+ */
+export const deleteCategory = async (req, res, next) => {
+  try {
+    const { categoryId } = req.params;
+
+    const category = await ProductCategory.findById(categoryId);
+    if (!category) {
+      return next(new ErrorHandler("Category not found", 404));
+    }
+
+    // Check if category is used by any products
+    const productsCount = await product.countDocuments({ 
+      category: category.name,
+      isDeleted: false 
+    });
+
+    if (productsCount > 0) {
+      return next(new ErrorHandler(
+        `Cannot delete category. It is used by ${productsCount} product(s). Deactivate it instead.`,
+        400
+      ));
+    }
+
+    category.isActive = false;
+    await category.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Category deleted successfully"
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// PRODUCT MANAGEMENT
+// ============================================
+
+/**
+ * Get products by status (zero stock, flagged, etc.)
+ */
+export const getProductsByStatus = async (req, res, next) => {
+  try {
+    const { status, days = 30, page = 1, limit = 50 } = req.query;
+
+    const filter = { isDeleted: false };
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    switch (status) {
+      case "zero_stock":
+        filter.quantity = 0;
+        // Get products with zero stock for extended period
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - parseInt(days));
+        filter.updatedAt = { $lt: cutoffDate };
+        break;
+      case "inactive":
+        filter.isActive = false;
+        break;
+      case "all":
+        // No additional filter
+        break;
+      default:
+        return next(new ErrorHandler("Invalid status. Use: zero_stock, inactive, or all", 400));
+    }
+
+    const products = await product.find(filter)
+      .populate("upLoadedBy.userID", "name email")
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await product.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: products.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      products
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Toggle product visibility (isActive)
+ */
+export const toggleProductVisibility = async (req, res, next) => {
+  try {
+    const { productId } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== "boolean") {
+      return next(new ErrorHandler("isActive must be a boolean value", 400));
+    }
+
+    const productDoc = await product.findById(productId);
+    if (!productDoc) {
+      return next(new ErrorHandler("Product not found", 404));
+    }
+
+    productDoc.isActive = isActive;
+    await productDoc.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Product ${isActive ? "activated" : "deactivated"} successfully`,
+      product: {
+        _id: productDoc._id,
+        name: productDoc.name,
+        isActive: productDoc.isActive
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// SYSTEM CONFIGURATION MANAGEMENT
+// ============================================
+
+/**
+ * Update system configuration
+ */
+export const updateSystemConfig = async (req, res, next) => {
+  try {
+    const { configKey, configValue } = req.body;
+    const adminId = req.adminId;
+
+    if (!configKey || configValue === undefined) {
+      return next(new ErrorHandler("configKey and configValue are required", 400));
+    }
+
+    // Validate config key
+    const validKeys = Object.values(CONFIG_KEYS);
+    if (!validKeys.includes(configKey)) {
+      return next(new ErrorHandler(
+        `Invalid config key. Valid keys: ${validKeys.join(", ")}`,
+        400
+      ));
+    }
+
+    // Validate config value based on key
+    if (configKey === CONFIG_KEYS.MAX_TEMP_CELSIUS || configKey === CONFIG_KEYS.MIN_TEMP_CELSIUS) {
+      if (typeof configValue !== "number") {
+        return next(new ErrorHandler("Temperature must be a number", 400));
+      }
+    } else if (configKey === CONFIG_KEYS.FAQ_CONTENT) {
+      if (typeof configValue !== "string" && !Array.isArray(configValue)) {
+        return next(new ErrorHandler("FAQ content must be a string or array", 400));
+      }
+    } else if (configKey.includes("MINUTES") || configKey.includes("DAYS")) {
+      if (typeof configValue !== "number" || configValue < 0) {
+        return next(new ErrorHandler("Time value must be a positive number", 400));
+      }
+    }
+
+    const config = await SystemConfig.findOneAndUpdate(
+      { configKey },
+      { 
+        configValue,
+        updatedBy: adminId
+      },
+      { upsert: true, new: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Configuration updated successfully",
+      config
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get system configuration
+ */
+export const getSystemConfig = async (req, res, next) => {
+  try {
+    const { configKey } = req.query;
+
+    if (configKey) {
+      const config = await SystemConfig.findOne({ configKey });
+      if (!config) {
+        return next(new ErrorHandler("Configuration not found", 404));
+      }
+      return res.status(200).json({
+        success: true,
+        config
+      });
+    }
+
+    // Get all configurations
+    const configs = await SystemConfig.find()
+      .populate("updatedBy", "name email")
+      .sort({ configKey: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: configs.length,
+      configs
     });
   } catch (error) {
     next(error);

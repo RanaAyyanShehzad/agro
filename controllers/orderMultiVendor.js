@@ -21,6 +21,21 @@ export const updateProductStatus = async (req, res, next) => {
 
     // Update product status
     productItem.status = status;
+    
+    // Handle shipped status - set timestamps
+    if (status === 'shipped') {
+      productItem.shippedAt = new Date();
+      // Set expected delivery date at order level if not set
+      if (!order.expected_delivery_date) {
+        const expectedDate = new Date();
+        expectedDate.setDate(expectedDate.getDate() + 7);
+        order.expected_delivery_date = expectedDate;
+      }
+    }
+    
+    if (status === 'delivered') {
+      productItem.deliveredAt = new Date();
+    }
 
     // Recalculate order status
     order.orderStatus = calculateOrderStatus(order);
@@ -60,8 +75,11 @@ export const cancelOrder = async (req, res, next) => {
       product.status = "cancelled";
     });
 
-    // Update order status
+    // Update order and payment status
     order.orderStatus = "cancelled";
+    if (order.paymentInfo) {
+      order.paymentInfo.status = "cancelled";
+    }
 
     // Save order
     await order.save();

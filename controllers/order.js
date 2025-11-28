@@ -264,7 +264,20 @@ export const updateOrderStatus = async (req, res, next) => {
 
     const oldStatus = order.status;
     order.status = status;
-    if (status === 'delivered') order.deliveryInfo.actualDeliveryDate = new Date();
+    
+    // Handle shipped status - set shippedAt and expected_delivery_date
+    if (status === 'shipped') {
+      order.shippedAt = new Date();
+      // Set expected delivery date (default: 7 days from now, can be configured)
+      const expectedDate = new Date();
+      expectedDate.setDate(expectedDate.getDate() + 7);
+      order.expected_delivery_date = expectedDate;
+    }
+    
+    if (status === 'delivered') {
+      order.deliveryInfo.actualDeliveryDate = new Date();
+      order.deliveredAt = new Date();
+    }
 
     await order.save();
 
@@ -315,6 +328,9 @@ export const cancelOrder = async (req, res, next) => {
     }
 
     order.status = 'canceled';
+    if (order.paymentInfo) {
+      order.paymentInfo.status = "cancelled";
+    }
     await order.save();
     res.status(200).json({ success: true, message: "Order canceled successfully", order });
   } catch (error) {

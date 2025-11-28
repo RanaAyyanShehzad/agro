@@ -21,6 +21,10 @@ export const calculateOrderStatus = (order) => {
     return "partially_cancelled";
   }
 
+  if (productStatuses.includes("received")) {
+    return "partially_received";
+  }
+
   if (productStatuses.includes("delivered")) {
     return "partially_delivered";
   }
@@ -44,7 +48,8 @@ export const isValidStatusTransition = (currentStatus, newStatus) => {
     processing: ["confirmed", "cancelled"],
     confirmed: ["shipped", "cancelled"],
     shipped: ["delivered"],
-    delivered: [], // Final state
+    delivered: ["received"], // Can transition to received when buyer confirms
+    received: [], // Final state
     cancelled: [] // Final state
   };
 

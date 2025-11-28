@@ -1,15 +1,38 @@
 import express from "express"
 import { isAuthenticated } from "../middlewares/auth.js"
 import { cancelOrder, createOrder, getAllOrders, getOrderById, getSupplierOrders, getUserOrders, updateOrderStatus } from "../controllers/order.js";
+import { 
+  updateOrderToDelivered, 
+  confirmOrderReceipt, 
+  createDispute, 
+  respondToDispute, 
+  resolveDispute,
+  adminRulingOnDispute
+} from "../controllers/orderManagement.js";
+import { checkIsAdmin } from "../middlewares/checkIsAdmin.js";
+
 const router=express.Router();
 router.use(isAuthenticated);
+
+// Order creation and retrieval
 router.post('/place-order',createOrder);
 router.get('/user-orders',getUserOrders);
 router.get('/item/:orderId',getOrderById);
-router.put('/update-status/:orderId',updateOrderStatus);
 router.put('/cancel/:orderId',cancelOrder);
 router.get('/supplier-orders',getSupplierOrders);
 router.get('/all',getAllOrders);
 
+// Order status updates
+router.put('/update-status/:orderId',updateOrderStatus);
+router.put('/delivered/:orderId', updateOrderToDelivered);
+router.put('/confirm-receipt/:orderId', confirmOrderReceipt);
+
+// Dispute management
+router.post('/dispute/:orderId', createDispute);
+router.put('/dispute/:disputeId/respond', respondToDispute);
+router.put('/dispute/:disputeId/resolve', resolveDispute);
+
+// Admin-only dispute resolution
+router.put('/dispute/:disputeId/admin-ruling', checkIsAdmin, adminRulingOnDispute);
 
 export default router;

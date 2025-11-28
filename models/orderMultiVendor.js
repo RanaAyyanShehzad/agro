@@ -31,8 +31,18 @@ const productItemSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["processing", "confirmed", "shipped", "delivered", "cancelled"],
+    enum: ["processing", "confirmed", "shipped", "delivered", "received", "cancelled"],
     default: "processing"
+  },
+  // Per-product timestamps (for multi-vendor orders)
+  shippedAt: {
+    type: Date
+  },
+  deliveredAt: {
+    type: Date
+  },
+  receivedAt: {
+    type: Date
   }
 }, { _id: true });
 
@@ -64,12 +74,70 @@ const orderSchema = new mongoose.Schema({
       "confirmed",
       "shipped",
       "delivered",
+      "received",
       "cancelled",
       "partially_shipped",
       "partially_delivered",
+      "partially_received",
       "partially_cancelled"
     ],
     default: "processing"
+  },
+  // Expected delivery date (set when order is shipped)
+  expected_delivery_date: {
+    type: Date
+  },
+  // Timestamp when order was shipped
+  shippedAt: {
+    type: Date
+  },
+  // Timestamp when order was delivered
+  deliveredAt: {
+    type: Date
+  },
+  // Timestamp when buyer confirmed receipt
+  receivedAt: {
+    type: Date
+  },
+  // Dispute status
+  dispute_status: {
+    type: String,
+    enum: ["none", "open", "pending_admin_review", "closed"],
+    default: "none",
+    index: true
+  },
+  // Payment status (separate from paymentInfo.status for clarity)
+  payment_status: {
+    type: String,
+    enum: ["pending", "complete", "refunded", "cancelled"],
+    default: "pending",
+    index: true
+  },
+  // Seller-uploaded Proof of Delivery
+  proofOfDelivery: {
+    images: [{
+      type: String // URLs to uploaded images
+    }],
+    notes: {
+      type: String,
+      maxlength: 500
+    },
+    uploadedAt: {
+      type: Date
+    }
+  },
+  // Buyer-uploaded Proof of Fault/Non-Receipt (for disputes)
+  proofOfFault: {
+    images: [{
+      type: String // URLs to uploaded images
+    }],
+    description: {
+      type: String,
+      maxlength: 1000
+    },
+    uploadedAt: {
+      type: Date
+    }
   },
   totalPrice: {
     type: Number,
@@ -84,7 +152,7 @@ const orderSchema = new mongoose.Schema({
     },
     status: {
       type: String,
-      enum: ["pending", "completed", "failed", "refunded"],
+      enum: ["pending", "completed", "failed", "refunded", "cancelled"],
       default: "pending"
     },
     transactionId: {
@@ -148,6 +216,9 @@ orderSchema.index({ "products.farmerId": 1 });
 orderSchema.index({ "products.supplierId": 1 });
 orderSchema.index({ "paymentInfo.status": 1 });
 orderSchema.index({ createdAt: -1 });
+orderSchema.index({ dispute_status: 1 });
+orderSchema.index({ payment_status: 1 });
+orderSchema.index({ expected_delivery_date: 1 });
 
 // Validate each product item has either farmerId or supplierId
 orderSchema.pre("validate", function(next) {
