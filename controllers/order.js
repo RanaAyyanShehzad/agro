@@ -337,10 +337,10 @@ export const getSupplierOrders = async (req, res, next) => {
       .map(order => {
         // Filter products to only show vendor's products
         const vendorProducts = order.products.filter(product => {
-          if (userRole === "farmer" && product.farmerId) {
+          if (userRole === "farmer" && product.farmerId && product.farmerId._id) {
             return product.farmerId._id.toString() === vendorId;
           }
-          if (userRole === "supplier" && product.supplierId) {
+          if (userRole === "supplier" && product.supplierId && product.supplierId._id) {
             return product.supplierId._id.toString() === vendorId;
           }
           return false;
@@ -360,11 +360,16 @@ export const getSupplierOrders = async (req, res, next) => {
           ...order,
           products: vendorProducts,
           totalPrice: vendorTotalPrice,
-          customer: {
-            name: order.buyerId.name,
-            email: order.buyerId.email,
-            phone: order.buyerId.phone,
-            address: order.buyerId.address
+          customer: order.buyerId ? {
+            name: order.buyerId.name || "N/A",
+            email: order.buyerId.email || "N/A",
+            phone: order.buyerId.phone || "N/A",
+            address: order.buyerId.address || "N/A"
+          } : {
+            name: "N/A",
+            email: "N/A",
+            phone: "N/A",
+            address: "N/A"
           }
         };
       })
