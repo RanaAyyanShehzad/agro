@@ -143,6 +143,22 @@ export const createOrder = async (req, res, next) => {
 export const getUserOrders = async (req, res, next) => {
   try {
     const userId = req.user.id;
+    const userRole = getRole(req).role;
+    
+    // Use OrderMultiVendor for buyers (new orders)
+    if (userRole === "buyer" || userRole === "farmer" ) {
+      const orders = await OrderMultiVendor.find({ buyerId: userId })
+        .populate("buyerId", "name email")
+        .populate("products.productId")
+        .populate("products.farmerId", "name email")
+        .populate("products.supplierId", "name email")
+        .sort({ createdAt: -1 })
+        .lean();
+      
+      return res.status(200).json({ success: true, count: orders.length, orders });
+    }
+    
+    // Fallback to old Order model for farmers (if they have old orders)
     const orders = await Order.find({ userId }).populate("products.productId").sort({ createdAt: -1 });
     res.status(200).json({ success: true, count: orders.length, orders });
   } catch (error) {
@@ -299,34 +315,66 @@ export const cancelOrder = async (req, res, next) => {
 
 export const getSupplierOrders = async (req, res, next) => {
   try {
-    const supplierId = req.user.id;
-    const orders = await Order.find().populate("products.productId").sort({ createdAt: -1 });
+    const vendorId = req.user.id;
+    const userRole = getRole(req).role;
 
-    // Populate buyer/farmer information for each order
-    const ordersWithCustomerInfo = await Promise.all(orders.map(async (order) => {
-      let customerInfo = null;
-      if (order.userRole === "buyer") {
-        const customer = await buyer.findById(order.userId).select("name email phone");
-        customerInfo = customer ? { name: customer.name, email: customer.email, phone: customer.phone } : null;
-      } else if (order.userRole === "farmer") {
-        const customer = await farmer.findById(order.userId).select("name email phone");
-        customerInfo = customer ? { name: customer.name, email: customer.email, phone: customer.phone } : null;
-      }
+    // Only farmers and suppliers can access this
+    if (userRole !== "farmer" && userRole !== "supplier") {
+      return next(new ErrorHandler("Only farmers and suppliers can access this endpoint", 403));
+    }
 
-      return {
-        ...order.toObject(),
-        customer: customerInfo
-      };
-    }));
+    // Get all orders and filter by vendor's products
+    const allOrders = await OrderMultiVendor.find()
+      .populate("buyerId", "name email phone address")
+      .populate("products.productId")
+      .populate("products.farmerId", "name email phone")
+      .populate("products.supplierId", "name email phone")
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const filteredOrders = ordersWithCustomerInfo.map(order => {
-      const supplierProducts = order.products.filter(
-        p => p.productId?.upLoadedBy?.userID.toString() === supplierId
-      );
-      return { ...order, products: supplierProducts };
-    }).filter(order => order.products.length > 0);
+    // Filter orders to only include those with vendor's products
+    const filteredOrders = allOrders
+      .map(order => {
+        // Filter products to only show vendor's products
+        const vendorProducts = order.products.filter(product => {
+          if (userRole === "farmer" && product.farmerId) {
+            return product.farmerId._id.toString() === vendorId;
+          }
+          if (userRole === "supplier" && product.supplierId) {
+            return product.supplierId._id.toString() === vendorId;
+          }
+          return false;
+        });
 
-    res.status(200).json({ success: true, count: filteredOrders.length, orders: filteredOrders });
+        // Only include order if it has vendor's products
+        if (vendorProducts.length === 0) {
+          return null;
+        }
+
+        // Calculate total price for vendor's products only
+        const vendorTotalPrice = vendorProducts.reduce((sum, item) => {
+          return sum + (item.price * item.quantity);
+        }, 0);
+
+        return {
+          ...order,
+          products: vendorProducts,
+          totalPrice: vendorTotalPrice,
+          customer: {
+            name: order.buyerId.name,
+            email: order.buyerId.email,
+            phone: order.buyerId.phone,
+            address: order.buyerId.address
+          }
+        };
+      })
+      .filter(order => order !== null);
+
+    res.status(200).json({ 
+      success: true, 
+      count: filteredOrders.length, 
+      orders: filteredOrders 
+    });
   } catch (error) {
     next(error);
   }
