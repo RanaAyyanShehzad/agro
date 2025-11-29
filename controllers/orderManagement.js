@@ -394,11 +394,10 @@ export const createDispute = async (req, res, next) => {
     }
 
     // Check if order is in appropriate status for dispute
-    // Disputes can only be created after order is delivered (not at shipped status)
     const currentStatus = isMultiVendor ? order.orderStatus : order.status;
-    if (!["delivered", "received"].includes(currentStatus)) {
+    if (!["shipped", "delivered", "received"].includes(currentStatus)) {
       return next(new ErrorHandler(
-        `Cannot create dispute. Order must be in "delivered" or "received" status. Current status: "${currentStatus}"`,
+        `Cannot create dispute. Order must be in "shipped", "delivered", or "received" status. Current status: "${currentStatus}"`,
         400
       ));
     }
