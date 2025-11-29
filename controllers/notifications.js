@@ -6,12 +6,24 @@ import { getUserNotifications, markNotificationAsRead, markAllNotificationsAsRea
  */
 export const getUserNotificationsController = async (req, res, next) => {
   try {
-    const userId = req.user._id;
+    // Ensure we get the userId as string or ObjectId properly
+    const userId = req.user._id || req.user.id;
     const userRole = req.user.role;
+    
+    if (!userId) {
+      return next(new ErrorHandler("User ID not found", 400));
+    }
+    
+    if (!userRole) {
+      return next(new ErrorHandler("User role not found", 400));
+    }
     
     const { isRead, limit = 50, page = 1 } = req.query;
     
-    const result = await getUserNotifications(userId, userRole, {
+    // Convert userId to string for consistent handling
+    const userIdString = userId.toString ? userId.toString() : userId;
+    
+    const result = await getUserNotifications(userIdString, userRole, {
       isRead: isRead !== undefined ? isRead === 'true' : undefined,
       limit: parseInt(limit),
       page: parseInt(page)
@@ -22,6 +34,7 @@ export const getUserNotificationsController = async (req, res, next) => {
       data: result
     });
   } catch (error) {
+    console.error("Error in getUserNotificationsController:", error);
     next(error);
   }
 };

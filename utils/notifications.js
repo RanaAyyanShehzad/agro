@@ -10,9 +10,24 @@ import { admin } from "../models/admin.js";
  */
 export const createNotification = async (userId, userRole, type, title, message, options = {}) => {
   try {
+    // Ensure userId is properly formatted as ObjectId
+    const mongoose = await import("mongoose");
+    let userIdObj = userId;
+    
+    // Convert to ObjectId if it's a string
+    if (typeof userId === 'string') {
+      userIdObj = new mongoose.default.Types.ObjectId(userId);
+    } else if (userId && userId.toString) {
+      // If it's already an ObjectId, use it directly
+      userIdObj = userId;
+    }
+
+    // Normalize userRole to lowercase
+    const normalizedRole = userRole ? userRole.toLowerCase() : userRole;
+
     const notification = await Notification.create({
-      userId,
-      userRole,
+      userId: userIdObj,
+      userRole: normalizedRole,
       type,
       title,
       message,
@@ -64,7 +79,26 @@ export const getUserNotifications = async (userId, userRole, options = {}) => {
     const { isRead, limit = 50, page = 1 } = options;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const filter = { userId, userRole };
+    // Ensure userId is properly converted to ObjectId for comparison
+    const mongoose = await import("mongoose");
+    let userIdObj = userId;
+    
+    // Convert to ObjectId if it's a string
+    if (typeof userId === 'string') {
+      userIdObj = new mongoose.default.Types.ObjectId(userId);
+    } else if (userId && userId.toString) {
+      // If it's already an ObjectId, use it directly (Mongoose handles comparison)
+      userIdObj = userId;
+    }
+
+    // Normalize userRole to lowercase for consistent matching
+    const normalizedRole = userRole ? userRole.toLowerCase() : userRole;
+
+    const filter = { 
+      userId: userIdObj,
+      userRole: normalizedRole
+    };
+    
     if (isRead !== undefined) {
       filter.isRead = isRead;
     }
@@ -75,7 +109,11 @@ export const getUserNotifications = async (userId, userRole, options = {}) => {
       .limit(parseInt(limit));
 
     const total = await Notification.countDocuments(filter);
-    const unreadCount = await Notification.countDocuments({ userId, userRole, isRead: false });
+    const unreadCount = await Notification.countDocuments({ 
+      userId: userIdObj, 
+      userRole: normalizedRole, 
+      isRead: false 
+    });
 
     return {
       notifications,
