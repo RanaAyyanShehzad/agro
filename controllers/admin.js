@@ -1449,22 +1449,22 @@ export const resetUserPassword = async (req, res, next) => {
       newPassword = providedPassword;
     } else {
       // No password provided - generate temporary password
-      // Generate password matching system pattern: 8+ chars, uppercase, lowercase, number, special char
+      // Generate password matching system pattern: exactly 8 chars, uppercase, lowercase, number, special char
       const lowercase = "abcdefghijklmnopqrstuvwxyz";
       const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const numbers = "0123456789";
       const special = "!@#$%^&*()_+-=[]{}|;:',.<>?/~";
       
-      // Generate random password
+      // Generate random password with required characters
       let tempPassword = "";
       tempPassword += lowercase[Math.floor(Math.random() * lowercase.length)];
       tempPassword += uppercase[Math.floor(Math.random() * uppercase.length)];
       tempPassword += numbers[Math.floor(Math.random() * numbers.length)];
       tempPassword += special[Math.floor(Math.random() * special.length)];
       
-      // Fill remaining length (minimum 8 chars)
+      // Fill remaining length to exactly 8 chars
       const allChars = lowercase + uppercase + numbers + special;
-      for (let i = tempPassword.length; i < 12; i++) {
+      for (let i = tempPassword.length; i < 8; i++) {
         tempPassword += allChars[Math.floor(Math.random() * allChars.length)];
       }
       
@@ -1484,7 +1484,7 @@ export const resetUserPassword = async (req, res, next) => {
       userId,
       {
         entityName: user.email,
-        details: { temporaryPassword: generateTemporary }
+        details: { temporaryPassword: !providedPassword }
       }
     );
 
