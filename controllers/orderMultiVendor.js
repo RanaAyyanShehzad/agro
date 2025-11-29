@@ -6,6 +6,7 @@ import { createNotification } from "../utils/notifications.js";
 import { logOrderChange } from "../utils/orderHistoryLogger.js";
 import { buyer } from "../models/buyer.js";
 import { farmer } from "../models/farmer.js";
+import { product } from "../models/products.js";
 
 /**
  * Update product status in an order
@@ -131,6 +132,19 @@ export const cancelOrder = async (req, res, next) => {
   try {
     const order = req.order;
 
+    // Restore product quantities before cancelling
+    for (const productItem of order.products) {
+      // Only restore if product hasn't been shipped or delivered
+      if (productItem.status !== "shipped" && productItem.status !== "delivered") {
+        const dbProduct = await product.findById(productItem.productId);
+        if (dbProduct) {
+          dbProduct.quantity += productItem.quantity;
+          dbProduct.isAvailable = true; // Make available again
+          await dbProduct.save();
+        }
+      }
+    }
+
     // Update all product statuses to cancelled
     order.products.forEach(product => {
       product.status = "cancelled";
@@ -138,6 +152,7 @@ export const cancelOrder = async (req, res, next) => {
 
     // Update order and payment status
     order.orderStatus = "cancelled";
+    order.payment_status = "cancelled";
     if (order.paymentInfo) {
       order.paymentInfo.status = "cancelled";
     }

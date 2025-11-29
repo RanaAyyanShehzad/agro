@@ -90,6 +90,30 @@ export const createOrder = async (req, res, next) => {
     let cartDeleted = false;
 
     try {
+      // Deduct product quantities before creating order
+      for (const productItem of cart.products) {
+        const dbProduct = await product.findById(productItem.productId);
+        if (dbProduct) {
+          // Check if enough quantity available
+          if (productItem.quantity > dbProduct.quantity) {
+            return next(new ErrorHandler(
+              `Insufficient quantity for product ${dbProduct.name}. Only ${dbProduct.quantity} available.`,
+              400
+            ));
+          }
+          
+          // Deduct quantity from product
+          dbProduct.quantity -= productItem.quantity;
+          if (dbProduct.quantity < 0) dbProduct.quantity = 0;
+          
+          await dbProduct.save();
+          
+          // Handle zero quantity - set isAvailable to false or delete
+          const { handleZeroQuantity } = await import("../utils/features.js");
+          await handleZeroQuantity(dbProduct);
+        }
+      }
+
       const order = new OrderMultiVendor(orderData);
       savedOrder = await order.save();
 
@@ -98,8 +122,6 @@ export const createOrder = async (req, res, next) => {
       for (const productItem of cart.products) {
         const dbProduct = await product.findById(productItem.productId);
         if (dbProduct) {
-          if (dbProduct.quantity === 0) await product.findByIdAndDelete(productItem.productId);
-
           const { userID, role } = dbProduct.upLoadedBy;
           const key = `${role}_${userID.toString()}`;
 
@@ -206,7 +228,22 @@ export const createOrder = async (req, res, next) => {
 
       return res.status(201).json({ success: true, message: "Order created successfully", order: savedOrder });
     } catch (innerError) {
-      if (savedOrder && !cartDeleted) await OrderMultiVendor.findByIdAndDelete(savedOrder._id);
+      // Restore product quantities if order creation failed
+      if (savedOrder && !cartDeleted) {
+        try {
+          for (const productItem of cart.products) {
+            const dbProduct = await product.findById(productItem.productId);
+            if (dbProduct) {
+              dbProduct.quantity += productItem.quantity;
+              dbProduct.isAvailable = true;
+              await dbProduct.save();
+            }
+          }
+          await OrderMultiVendor.findByIdAndDelete(savedOrder._id);
+        } catch (restoreError) {
+          console.error("Error restoring product quantities:", restoreError);
+        }
+      }
       throw innerError;
     }
   } catch (error) {

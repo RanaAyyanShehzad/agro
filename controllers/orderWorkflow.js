@@ -177,12 +177,20 @@ export const rejectOrder = async (req, res, next) => {
       return next(new ErrorHandler("No pending products to reject in this order", 400));
     }
 
-    // Reject all seller's products
+    // Reject all seller's products and restore quantity
     for (const productItem of pendingProducts) {
       productItem.sellerAccepted = false;
       productItem.status = "rejected";
       productItem.sellerRejectedAt = new Date();
       productItem.rejectionReason = reason.trim();
+      
+      // Restore product quantity
+      const dbProduct = await product.findById(productItem.productId);
+      if (dbProduct) {
+        dbProduct.quantity += productItem.quantity;
+        dbProduct.isAvailable = true; // Make available again
+        await dbProduct.save();
+      }
     }
 
     // Check if all products are rejected or if order should be cancelled

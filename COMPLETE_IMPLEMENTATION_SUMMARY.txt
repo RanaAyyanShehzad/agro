@@ -1,0 +1,1478 @@
+================================================================================
+                    COMPLETE IMPLEMENTATION SUMMARY
+                    New & Updated Endpoints with Request/Response
+================================================================================
+
+BASE URL: Your server URL  : https://agrofarm-vd8i.onrender.com
+
+================================================================================
+1. NOTIFICATION MANAGEMENT APIs (NEW)
+================================================================================
+
+All notification endpoints require authentication (isAuthenticated middleware).
+
+--------------------------------------------------------------------------------
+1.1 Get User Notifications
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/notifications
+Auth: Required
+
+Query Parameters:
+- isRead (optional): "true" | "false" - Filter by read status
+- limit (optional): Number - Items per page (default: 50)
+- page (optional): Number - Page number (default: 1)
+
+Response (200 OK):
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "_id": "notification_id",
+        "userId": "user_id",
+        "userRole": "buyer",
+        "type": "order_placed",
+        "title": "New Order Received",
+        "message": "You have received a new order #order123. Please accept or reject it.",
+        "relatedId": "order_id",
+        "relatedType": "order",
+        "actionUrl": "/orders/order_id",
+        "priority": "high",
+        "isRead": false,
+        "readAt": null,
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ],
+    "total": 25,
+    "unreadCount": 5,
+    "page": 1,
+    "totalPages": 1
+  }
+}
+
+Error Response (401):
+{
+  "success": false,
+  "message": "Authentication required"
+}
+
+--------------------------------------------------------------------------------
+1.2 Mark Notification as Read
+--------------------------------------------------------------------------------
+Method: PATCH
+Endpoint: /api/notifications/:notificationId/read
+Auth: Required
+
+URL Parameters:
+- notificationId: Notification ID
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Notification marked as read",
+  "data": {
+    "_id": "notification_id",
+    "isRead": true,
+    "readAt": "2024-01-01T00:00:00.000Z",
+    ...
+  }
+}
+
+Error Response (404):
+{
+  "success": false,
+  "message": "Notification not found or access denied"
+}
+
+--------------------------------------------------------------------------------
+1.3 Mark All Notifications as Read
+--------------------------------------------------------------------------------
+Method: PATCH
+Endpoint: /api/notifications/read-all
+Auth: Required
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "All notifications marked as read",
+  "data": {
+    "modifiedCount": 5
+  }
+}
+
+--------------------------------------------------------------------------------
+1.4 Delete Notification
+--------------------------------------------------------------------------------
+Method: DELETE
+Endpoint: /api/notifications/:notificationId
+Auth: Required
+
+URL Parameters:
+- notificationId: Notification ID
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Notification deleted successfully"
+}
+
+Error Response (404):
+{
+  "success": false,
+  "message": "Notification not found or access denied"
+}
+
+================================================================================
+2. ORDER WORKFLOW APIs (NEW)
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 Seller Accept Order
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/order/:orderId/accept
+Auth: Required (Seller: farmer/supplier only)
+
+URL Parameters:
+- orderId: Order ID
+
+Request Body: None
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Order accepted successfully",
+  "order": {
+    "_id": "order_id",
+    "orderStatus": "processing",
+    "products": [
+      {
+        "_id": "product_item_id",
+        "productId": {...},
+        "farmerId": "farmer_id",
+        "status": "processing",
+        "sellerAccepted": true,
+        ...
+      }
+    ],
+    ...
+  }
+}
+
+Error Responses:
+- 400: No pending products to accept in this order
+- 403: Only sellers can accept orders / You don't have any products in this order
+- 404: Order not found
+
+Note: When seller accepts, product status changes from "pending" -> "confirmed" -> "processing". 
+Buyer receives notification and email.
+
+--------------------------------------------------------------------------------
+2.2 Seller Reject Order
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/order/:orderId/reject
+Auth: Required (Seller: farmer/supplier only)
+
+URL Parameters:
+- orderId: Order ID
+
+Request Body:
+{
+  "reason": "Product out of stock" (required)
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Order rejected successfully. Order has been cancelled.",
+  "order": {
+    "_id": "order_id",
+    "orderStatus": "cancelled",
+    "payment_status": "cancelled",
+    "products": [
+      {
+        "_id": "product_item_id",
+        "status": "rejected",
+        "sellerAccepted": false,
+        "sellerRejectedAt": "2024-01-01T00:00:00.000Z",
+        "rejectionReason": "Product out of stock",
+        ...
+      }
+    ],
+    ...
+  }
+}
+
+Error Responses:
+- 400: Rejection reason is required / No pending products to reject in this order
+- 403: Only sellers can reject orders / You don't have any products in this order
+- 404: Order not found
+
+Note: When seller rejects, product status becomes "rejected". If all products rejected, 
+order status becomes "cancelled" and payment_status becomes "cancelled". 
+Buyer receives notification.
+
+================================================================================
+3. UPDATED ORDER MANAGEMENT APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 Update Order to Delivered (with Time Validation)
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/order/delivered/:orderId
+Auth: Required (Seller: farmer/supplier)
+
+URL Parameters:
+- orderId: Order ID
+
+Request Body:
+{
+  "proofOfDelivery": {
+    "images": ["url1", "url2"], (optional)
+    "notes": "Delivery notes" (optional)
+  }
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Order marked as delivered successfully",
+  "order": {
+    "_id": "order_id",
+    "status": "delivered",
+    "deliveredAt": "2024-01-01T00:00:00.000Z",
+    "proofOfDelivery": {
+      "images": ["url1", "url2"],
+      "notes": "Delivery notes",
+      "uploadedAt": "2024-01-01T00:00:00.000Z"
+    },
+    ...
+  }
+}
+
+Error Responses:
+- 400: Cannot mark as delivered yet (minimum time not passed) / Order must be in "shipped" status
+- 403: You don't have permission
+- 404: Order not found
+
+Note: Seller cannot mark order as delivered until minimum time (configured in SystemConfig: 
+SHIPPED_TO_DELIVERED_MINUTES, default: 10 minutes) has passed after shipping.
+
+--------------------------------------------------------------------------------
+3.2 Confirm Order Receipt (Buyer)
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/order/confirm-receipt/:orderId
+Auth: Required (Buyer only)
+
+URL Parameters:
+- orderId: Order ID
+
+Request Body: None
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Order receipt confirmed successfully",
+  "order": {
+    "_id": "order_id",
+    "status": "received",
+    "receivedAt": "2024-01-01T00:00:00.000Z",
+    "payment_status": "complete",
+    ...
+  }
+}
+
+Error Responses:
+- 400: Order must be in "delivered" status / Cannot confirm receipt while dispute is open
+- 403: This order does not belong to you
+- 404: Order not found
+
+Note: Buyer receives email when order is delivered. If buyer doesn't respond within configured 
+time (DELIVERED_TO_RECEIVED_MINUTES, default: 1440 minutes = 24 hours), order is auto-confirmed.
+
+================================================================================
+4. DISPUTE MANAGEMENT APIs (UPDATED)
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 Create Dispute
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/order/dispute/:orderId
+Auth: Required (Buyer only)
+
+URL Parameters:
+- orderId: Order ID
+
+Request Body:
+{
+  "disputeType": "non_delivery" | "product_fault" | "wrong_item" | "other",
+  "reason": "Dispute reason description",
+  "proofOfFault": {
+    "images": ["url1", "url2"], (optional, required for product_fault)
+    "description": "Detailed description of the issue" (optional)
+  }
+}
+
+Response (201 Created):
+{
+  "success": true,
+  "message": "Dispute created successfully",
+  "dispute": {
+    "_id": "dispute_id",
+    "orderId": "order_id",
+    "buyerId": "buyer_id",
+    "sellerId": "seller_id",
+    "sellerRole": "farmer",
+    "disputeType": "product_fault",
+    "reason": "Product received damaged",
+    "buyerProof": {
+      "images": ["url1", "url2"],
+      "description": "Product photos showing damage",
+      "uploadedAt": "2024-01-01T00:00:00.000Z"
+    },
+    "status": "open",
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+
+Error Responses:
+- 400: Order must be in "shipped" or "delivered" status / A dispute already exists / disputeType and reason are required
+- 403: This order does not belong to you
+- 404: Order not found
+
+Note: When dispute is created, order's dispute_status is set to "open" and payment_status remains "pending".
+
+--------------------------------------------------------------------------------
+4.2 Seller Respond to Dispute
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/order/dispute/:disputeId/respond
+Auth: Required (Seller: farmer/supplier)
+
+URL Parameters:
+- disputeId: Dispute ID
+
+Request Body:
+{
+  "evidence": ["url1", "url2"], (required, array of image/document URLs)
+  "proposal": "Seller's resolution proposal" (required)
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Dispute response submitted successfully",
+  "dispute": {
+    "_id": "dispute_id",
+    "sellerResponse": {
+      "evidence": ["url1", "url2"],
+      "proposal": "I will provide a replacement product",
+      "respondedAt": "2024-01-01T00:00:00.000Z"
+    },
+    "status": "open",
+    ...
+  }
+}
+
+Error Responses:
+- 400: Dispute is not open for response / Evidence and proposal are required
+- 403: This dispute does not belong to you
+- 404: Dispute not found
+
+Note: Buyer receives email notification when seller responds. Seller must respond within 
+configured time (DISPUTE_RESPONSE_HOURS, default: 24 hours) or dispute auto-escalates to admin.
+
+--------------------------------------------------------------------------------
+4.3 Buyer Resolve Dispute (Accept/Reject)
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/order/dispute/:disputeId/resolve
+Auth: Required (Buyer only)
+
+URL Parameters:
+- disputeId: Dispute ID
+
+Request Body:
+{
+  "action": "accept" | "reject"
+}
+
+Response (200 OK) - Accept:
+{
+  "success": true,
+  "message": "Dispute resolved successfully",
+  "dispute": {
+    "_id": "dispute_id",
+    "status": "closed",
+    "buyerAccepted": true,
+    "resolvedAt": "2024-01-01T00:00:00.000Z",
+    ...
+  }
+}
+
+Response (200 OK) - Reject:
+{
+  "success": true,
+  "message": "Dispute escalated to admin successfully",
+  "dispute": {
+    "_id": "dispute_id",
+    "status": "pending_admin_review",
+    ...
+  }
+}
+
+Error Responses:
+- 400: Invalid action (must be "accept" or "reject") / Dispute is not open for resolution / Seller has not responded yet
+- 403: This dispute does not belong to you
+- 404: Dispute not found
+
+Note:
+- If buyer accepts: Dispute closes, payment_status = "complete"
+- If buyer rejects: Dispute escalates to admin (status = "pending_admin_review")
+
+--------------------------------------------------------------------------------
+4.4 Admin Ruling on Dispute
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/order/dispute/:disputeId/admin-ruling
+Auth: Required (Admin only)
+
+URL Parameters:
+- disputeId: Dispute ID
+
+Request Body:
+{
+  "decision": "buyer_win" | "seller_win",
+  "notes": "Admin's ruling notes" (optional)
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Dispute resolved by admin successfully",
+  "dispute": {
+    "_id": "dispute_id",
+    "status": "closed",
+    "adminRuling": {
+      "decision": "buyer_win",
+      "notes": "Product was damaged, refund approved",
+      "ruledAt": "2024-01-01T00:00:00.000Z",
+      "adminId": "admin_id"
+    },
+    "resolvedAt": "2024-01-01T00:00:00.000Z",
+    ...
+  }
+}
+
+Error Responses:
+- 400: Decision must be 'buyer_win' or 'seller_win' / Dispute is not pending admin review
+- 404: Dispute not found
+
+Note:
+- If buyer_win: payment_status = "refunded"
+- If seller_win: payment_status = "complete"
+- Both parties receive email notification
+
+================================================================================
+5. ADMIN MANAGEMENT APIs (UPDATED)
+================================================================================
+
+All admin APIs require authentication and admin role (checkIsAdmin middleware).
+
+--------------------------------------------------------------------------------
+5.1 Get All Users
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/users
+Auth: Required (Admin only)
+
+Query Parameters:
+- role (optional): "buyer" | "farmer" | "supplier" - Filter by role
+- includeDeleted (optional): "true" | "false" - Include soft-deleted users (default: false)
+- page (optional): Number - Page number (default: 1)
+- limit (optional): Number - Items per page (default: 50)
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 10,
+  "users": [
+    {
+      "_id": "user_id",
+      "name": "User Name",
+      "email": "user@example.com",
+      "phone": "1234567890",
+      "address": "User Address",
+      "role": "buyer",
+      "isAccountDeleted": false,
+      "isActive": true,
+      "isSuspended": false,
+      "suspendedUntil": null,
+      "suspensionReason": null,
+      "deletedAt": null,
+      "failedLoginAtempt": 0,
+      "lockUntil": null,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+
+--------------------------------------------------------------------------------
+5.2 Add New User
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/admin/users/add
+Auth: Required (Admin only)
+
+Request Body:
+{
+  "name": "User Name",
+  "email": "user@example.com",
+  "password": "password123",
+  "phone": "1234567890",
+  "address": "User Address",
+  "role": "buyer" | "farmer" | "supplier",
+  "img": "image_url" (optional)
+}
+
+Response (201 Created):
+{
+  "success": true,
+  "message": "buyer created successfully",
+  "user": {
+    "_id": "user_id",
+    "name": "User Name",
+    "email": "user@example.com",
+    "role": "buyer"
+  }
+}
+
+Error Responses:
+- 400: Invalid role or missing fields
+- 409: User with email already exists
+
+--------------------------------------------------------------------------------
+5.3 Delete User (Soft Delete)
+--------------------------------------------------------------------------------
+Method: DELETE
+Endpoint: /api/v1/admin/users/:role/:userId
+Auth: Required (Admin only)
+
+URL Parameters:
+- role: "buyer" | "farmer" | "supplier"
+- userId: User ID to delete
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "buyer deleted successfully"
+}
+
+Error Responses:
+- 400: Invalid role
+- 404: User not found
+
+--------------------------------------------------------------------------------
+5.4 Toggle User Status
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/admin/users/:role/:userId/toggle-status
+Auth: Required (Admin only)
+
+URL Parameters:
+- role: "buyer" | "farmer" | "supplier"
+- userId: User ID
+
+Request Body:
+{
+  "action": "lock" | "unlock" | "activate" | "deactivate" | "suspend" | "unsuspend",
+  "lockDuration": 30 (optional, minutes, only for "lock" action),
+  "suspensionReason": "Reason for suspension" (optional, only for "suspend" action),
+  "suspendedUntil": "2024-01-15T00:00:00.000Z" (optional, only for "suspend" action)
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "User locked successfully",
+  "user": {
+    "_id": "user_id",
+    "name": "User Name",
+    "isActive": false,
+    "lockUntil": "2024-01-01T00:30:00.000Z"
+  }
+}
+
+Error Responses:
+- 400: Invalid action or role
+- 404: User not found
+
+--------------------------------------------------------------------------------
+5.5 Suspend User
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/admin/users/:role/:userId/suspend
+Auth: Required (Admin only)
+
+URL Parameters:
+- role: "buyer" | "farmer" | "supplier"
+- userId: User ID
+
+Request Body:
+{
+  "suspensionReason": "Violation of terms" (required),
+  "suspendedUntil": "2024-01-15T00:00:00.000Z" (optional, ISO date string)
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "User suspended successfully",
+  "user": {
+    "_id": "user_id",
+    "isSuspended": true,
+    "suspendedUntil": "2024-01-15T00:00:00.000Z",
+    "suspensionReason": "Violation of terms"
+  }
+}
+
+--------------------------------------------------------------------------------
+5.6 Unsuspend User
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/admin/users/:role/:userId/unsuspend
+Auth: Required (Admin only)
+
+URL Parameters:
+- role: "buyer" | "farmer" | "supplier"
+- userId: User ID
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "User unsuspended successfully",
+  "user": {
+    "_id": "user_id",
+    "isSuspended": false,
+    "suspendedUntil": null,
+    "suspensionReason": null
+  }
+}
+
+--------------------------------------------------------------------------------
+5.7 Hard Delete User (Permanent)
+--------------------------------------------------------------------------------
+Method: DELETE
+Endpoint: /api/v1/admin/users/:role/:userId/hard-delete
+Auth: Required (Admin only)
+
+URL Parameters:
+- role: "buyer" | "farmer" | "supplier"
+- userId: User ID (must be soft-deleted first)
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "buyer permanently deleted"
+}
+
+Error Responses:
+- 400: User is not soft-deleted
+- 404: User not found
+
+--------------------------------------------------------------------------------
+5.8 Get User Full Profile (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/users/:role/:userId/profile
+Auth: Required (Admin only)
+
+URL Parameters:
+- role: "buyer" | "farmer" | "supplier"
+- userId: User ID
+
+Response (200 OK):
+{
+  "success": true,
+  "user": {
+    "_id": "user_id",
+    "name": "User Name",
+    "email": "user@example.com",
+    "phone": "1234567890",
+    "address": "User Address",
+    "role": "buyer",
+    "isAccountDeleted": false,
+    "isActive": true,
+    "isSuspended": false,
+    "password": "hashed_password", (visible to admin)
+    "failedLoginAtempt": 0,
+    "lockUntil": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+
+--------------------------------------------------------------------------------
+5.9 Force Password Reset
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/admin/users/:role/:userId/reset-password
+Auth: Required (Admin only)
+
+URL Parameters:
+- role: "buyer" | "farmer" | "supplier"
+- userId: User ID
+
+Request Body:
+{
+  "newPassword": "newpassword123" (optional, if not provided, generates temporary password)
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Password reset successfully",
+  "temporaryPassword": "TempPass123" (only if newPassword not provided)
+}
+
+================================================================================
+6. PRODUCT CATEGORY MANAGEMENT APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 Create Category
+--------------------------------------------------------------------------------
+Method: POST
+Endpoint: /api/v1/admin/categories
+Auth: Required (Admin only)
+
+Request Body:
+{
+  "name": "Category Name",
+  "description": "Category description" (optional)
+}
+
+Response (201 Created):
+{
+  "success": true,
+  "message": "Category created successfully",
+  "category": {
+    "_id": "category_id",
+    "name": "Category Name",
+    "description": "Category description",
+    "isActive": true,
+    "createdBy": "admin_id",
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+
+Error Responses:
+- 400: Category name is required
+- 409: Category with this name already exists
+
+--------------------------------------------------------------------------------
+6.2 Get All Categories
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/categories
+Auth: Required (Admin only)
+
+Query Parameters:
+- includeInactive (optional): "true" | "false" - Include inactive categories (default: false)
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 5,
+  "categories": [
+    {
+      "_id": "category_id",
+      "name": "Category Name",
+      "description": "Description",
+      "isActive": true,
+      "createdBy": { "_id": "admin_id", "name": "Admin Name", "email": "admin@example.com" },
+      "updatedBy": { "_id": "admin_id", "name": "Admin Name", "email": "admin@example.com" },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+
+--------------------------------------------------------------------------------
+6.3 Update Category
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/admin/categories/:categoryId
+Auth: Required (Admin only)
+
+URL Parameters:
+- categoryId: Category ID
+
+Request Body:
+{
+  "name": "Updated Name" (optional),
+  "description": "Updated description" (optional),
+  "isActive": true (optional)
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Category updated successfully",
+  "category": { ... }
+}
+
+Error Responses:
+- 404: Category not found
+- 409: Category name already exists
+
+--------------------------------------------------------------------------------
+6.4 Delete Category
+--------------------------------------------------------------------------------
+Method: DELETE
+Endpoint: /api/v1/admin/categories/:categoryId
+Auth: Required (Admin only)
+
+URL Parameters:
+- categoryId: Category ID
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Category deleted successfully"
+}
+
+Error Responses:
+- 400: Category is used by products (cannot delete)
+- 404: Category not found
+
+================================================================================
+7. PRODUCT MANAGEMENT APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 Get Products by Status
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/products
+Auth: Required (Admin only)
+
+Query Parameters:
+- status: "zero_stock" | "inactive" | "all"
+- days (optional): Number - Days for zero stock filter (default: 30)
+- page (optional): Number - Page number (default: 1)
+- limit (optional): Number - Items per page (default: 50)
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 10,
+  "total": 50,
+  "page": 1,
+  "totalPages": 5,
+  "products": [
+    {
+      "_id": "product_id",
+      "name": "Product Name",
+      "description": "Description",
+      "price": 100,
+      "quantity": 0,
+      "isActive": true,
+      "isDeleted": false,
+      "upLoadedBy": {
+        "userID": "user_id",
+        "role": "farmer",
+        "uploaderName": "Farmer Name"
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+
+--------------------------------------------------------------------------------
+7.2 Toggle Product Visibility
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/admin/products/:productId/visibility
+Auth: Required (Admin only)
+
+URL Parameters:
+- productId: Product ID
+
+Request Body:
+{
+  "isActive": true | false
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Product activated successfully",
+  "product": {
+    "_id": "product_id",
+    "name": "Product Name",
+    "isActive": true
+  }
+}
+
+Error Responses:
+- 400: isActive must be a boolean
+- 404: Product not found
+
+--------------------------------------------------------------------------------
+7.3 Get Product History (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/products/:productId/history
+Auth: Required (Admin only)
+
+URL Parameters:
+- productId: Product ID
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 5,
+  "history": [
+    {
+      "_id": "history_id",
+      "productId": "product_id",
+      "changedBy": {
+        "userId": "user_id",
+        "role": "farmer",
+        "name": "Farmer Name"
+      },
+      "changeType": "update",
+      "field": "price",
+      "oldValue": 100,
+      "newValue": 150,
+      "reason": "Price update",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+
+================================================================================
+8. SYSTEM CONFIGURATION APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 Get System Configuration
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/config
+Auth: Required (Admin only)
+
+Query Parameters:
+- configKey (optional): Specific config key to retrieve
+
+Response (200 OK) - All configs:
+{
+  "success": true,
+  "count": 5,
+  "configs": [
+    {
+      "_id": "config_id",
+      "configKey": "MAX_TEMP_CELSIUS",
+      "configValue": 42,
+      "description": "Maximum temperature threshold for dangerous weather alerts",
+      "updatedBy": { "_id": "admin_id", "name": "Admin Name", "email": "admin@example.com" },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+
+Response (200 OK) - Single config:
+{
+  "success": true,
+  "config": {
+    "_id": "config_id",
+    "configKey": "MAX_TEMP_CELSIUS",
+    "configValue": 42,
+    "description": "...",
+    "updatedBy": { ... },
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+
+Available Config Keys:
+- MAX_TEMP_CELSIUS: Number (default: 42)
+- MIN_TEMP_CELSIUS: Number (default: 2)
+- FAQ_CONTENT: String or Array
+- AUTO_CONFIRM_DAYS: Number (default: 7)
+- SHIPPED_TO_DELIVERED_MINUTES: Number (default: 10)
+- DELIVERED_TO_RECEIVED_MINUTES: Number (default: 1440)
+- DISPUTE_RESPONSE_HOURS: Number (default: 24)
+
+--------------------------------------------------------------------------------
+8.2 Update System Configuration
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/admin/config
+Auth: Required (Admin only)
+
+Request Body:
+{
+  "configKey": "MAX_TEMP_CELSIUS",
+  "configValue": 45
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Configuration updated successfully",
+  "config": {
+    "_id": "config_id",
+    "configKey": "MAX_TEMP_CELSIUS",
+    "configValue": 45,
+    "updatedBy": "admin_id",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+
+Error Responses:
+- 400: Invalid config key or value
+- 404: Configuration not found
+
+================================================================================
+9. ADMIN ORDER & DISPUTE MANAGEMENT APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+9.1 Get All Orders (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/orders
+Auth: Required (Admin only)
+
+Query Parameters:
+- status (optional): Filter by order status
+- paymentStatus (optional): Filter by payment status
+- disputeStatus (optional): Filter by dispute status ("none", "open", "pending_admin_review", "closed")
+- startDate (optional): Filter orders from this date (ISO format)
+- endDate (optional): Filter orders until this date (ISO format)
+- page (optional): Page number (default: 1)
+- limit (optional): Items per page (default: 20)
+- orderType (optional): "all" | "old" | "multivendor" (default: "all")
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 10,
+  "total": 50,
+  "page": 1,
+  "totalPages": 3,
+  "orders": [
+    {
+      "_id": "order_id",
+      "orderType": "multivendor",
+      "status": "delivered",
+      "orderStatus": "delivered",
+      "customerId": {
+        "_id": "customer_id",
+        "name": "Customer Name",
+        "email": "customer@example.com",
+        "phone": "1234567890",
+        "address": "Customer Address"
+      },
+      "products": [...],
+      "totalPrice": 5000,
+      "payment_status": "pending",
+      "dispute_status": "none",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      ...
+    }
+  ]
+}
+
+Note: Returns orders from both Order and OrderMultiVendor models. Each order includes
+an "orderType" field indicating "multivendor" or "old".
+
+--------------------------------------------------------------------------------
+9.2 Get Order by ID (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/orders/:orderId
+Auth: Required (Admin only)
+
+URL Parameters:
+- orderId: Order ID
+
+Response (200 OK):
+{
+  "success": true,
+  "order": {
+    "_id": "order_id",
+    "orderType": "multivendor",
+    "status": "delivered",
+    "customerId": { ... },
+    "products": [...],
+    "totalPrice": 5000,
+    "payment_status": "complete",
+    "dispute_status": "none",
+    "proofOfDelivery": { ... },
+    "proofOfFault": { ... },
+    ...
+  }
+}
+
+Error Responses:
+- 404: Order not found
+
+--------------------------------------------------------------------------------
+9.3 Admin Change Order Status
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/admin/orders/:orderId/status
+Auth: Required (Admin only)
+
+URL Parameters:
+- orderId: Order ID
+
+Request Body:
+{
+  "status": "pending" | "processing" | "shipped" | "delivered" | "received" | "canceled"
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Order status updated successfully",
+  "order": { ... }
+}
+
+--------------------------------------------------------------------------------
+9.4 Admin Change Payment Status
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/admin/orders/:orderId/payment-status
+Auth: Required (Admin only)
+
+URL Parameters:
+- orderId: Order ID
+
+Request Body:
+{
+  "paymentStatus": "pending" | "complete" | "refunded" | "cancelled"
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Payment status updated successfully",
+  "order": { ... }
+}
+
+--------------------------------------------------------------------------------
+9.5 Get Order History (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/orders/:orderId/history
+Auth: Required (Admin only)
+
+URL Parameters:
+- orderId: Order ID
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 5,
+  "history": [
+    {
+      "_id": "history_id",
+      "orderId": "order_id",
+      "orderType": "multivendor",
+      "changedBy": {
+        "userId": "user_id",
+        "role": "farmer",
+        "name": "Farmer Name"
+      },
+      "changeType": "status_change",
+      "field": "status",
+      "oldValue": "processing",
+      "newValue": "shipped",
+      "reason": "Order shipped",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+
+--------------------------------------------------------------------------------
+9.6 Get All Disputes (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/disputes
+Auth: Required (Admin only)
+
+Query Parameters:
+- status (optional): Filter by status ("open", "pending_admin_review", "closed")
+- disputeType (optional): Filter by type ("non_delivery", "product_fault", "wrong_item", "other")
+- startDate (optional): Filter disputes from this date (ISO format)
+- endDate (optional): Filter disputes until this date (ISO format)
+- page (optional): Page number (default: 1)
+- limit (optional): Items per page (default: 20)
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 5,
+  "total": 15,
+  "page": 1,
+  "totalPages": 2,
+  "disputes": [
+    {
+      "_id": "dispute_id",
+      "orderId": {
+        "_id": "order_id",
+        "status": "delivered",
+        "totalPrice": 5000,
+        ...
+      },
+      "buyerId": {
+        "_id": "buyer_id",
+        "name": "Buyer Name",
+        "email": "buyer@example.com",
+        "phone": "1234567890"
+      },
+      "sellerId": {
+        "_id": "seller_id",
+        "name": "Seller Name",
+        "email": "seller@example.com",
+        "phone": "0987654321"
+      },
+      "sellerRole": "farmer",
+      "disputeType": "product_fault",
+      "reason": "Product received damaged",
+      "buyerProof": {
+        "images": ["url1", "url2"],
+        "description": "Product photos showing damage",
+        "uploadedAt": "2024-01-01T00:00:00.000Z"
+      },
+      "sellerResponse": {
+        "evidence": ["url1"],
+        "proposal": "I will provide a replacement",
+        "respondedAt": "2024-01-01T01:00:00.000Z"
+      },
+      "status": "pending_admin_review",
+      "buyerAccepted": false,
+      "adminRuling": {
+        "decision": null,
+        "notes": null,
+        "ruledAt": null,
+        "adminId": null
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T01:00:00.000Z"
+    }
+  ]
+}
+
+--------------------------------------------------------------------------------
+9.7 Get Dispute by ID (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/disputes/:disputeId
+Auth: Required (Admin only)
+
+URL Parameters:
+- disputeId: Dispute ID
+
+Response (200 OK):
+{
+  "success": true,
+  "dispute": {
+    "_id": "dispute_id",
+    "orderId": { ... },
+    "buyerId": { ... },
+    "sellerId": { ... },
+    "disputeType": "product_fault",
+    "reason": "Product received damaged",
+    "buyerProof": { ... },
+    "sellerResponse": { ... },
+    "status": "pending_admin_review",
+    "adminRuling": {
+      "decision": null,
+      "notes": null,
+      "ruledAt": null,
+      "adminId": null
+    },
+    ...
+  }
+}
+
+Error Responses:
+- 404: Dispute not found
+
+Note: Use this endpoint to get full dispute details before making an admin ruling.
+
+--------------------------------------------------------------------------------
+9.8 Get Audit Logs (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/audit-logs
+Auth: Required (Admin only)
+
+Query Parameters:
+- action (optional): Filter by action type
+- entityType (optional): Filter by entity type
+- adminId (optional): Filter by admin ID
+- startDate (optional): Filter from date (ISO format)
+- endDate (optional): Filter until date (ISO format)
+- page (optional): Page number (default: 1)
+- limit (optional): Items per page (default: 50)
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 10,
+  "total": 100,
+  "page": 1,
+  "totalPages": 10,
+  "auditLogs": [
+    {
+      "_id": "log_id",
+      "adminId": {
+        "_id": "admin_id",
+        "name": "Admin Name",
+        "email": "admin@example.com"
+      },
+      "action": "user_deleted",
+      "entityType": "buyer",
+      "entityId": "user_id",
+      "details": {
+        "userId": "user_id",
+        "userEmail": "user@example.com"
+      },
+      "ipAddress": "127.0.0.1",
+      "userAgent": "Mozilla/5.0...",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+
+================================================================================
+10. STATUS VALUES REFERENCE
+================================================================================
+
+Order Status:
+- "pending"
+- "processing"
+- "shipped"
+- "delivered"
+- "received" (NEW)
+- "canceled"
+- "rejected" (for individual products in multi-vendor orders)
+
+Dispute Status:
+- "none" (no dispute)
+- "open" (buyer opened, seller can respond)
+- "pending_admin_review" (escalated to admin)
+- "closed" (resolved)
+
+Payment Status:
+- "pending" (default)
+- "complete"
+- "refunded"
+- "cancelled"
+
+Dispute Type:
+- "non_delivery"
+- "product_fault"
+- "wrong_item"
+- "other"
+
+Admin Ruling Decision:
+- "buyer_win" (refund approved)
+- "seller_win" (payment completed)
+
+Notification Types:
+- "order_placed"
+- "order_accepted"
+- "order_rejected"
+- "order_shipped"
+- "order_delivered"
+- "order_received"
+- "dispute_created"
+- "dispute_response"
+- "dispute_resolved"
+- "general"
+
+================================================================================
+11. AUTOMATED PROCESSES
+================================================================================
+
+11.1 Auto-Confirmation Job
+- Runs every hour
+- Automatically confirms orders that are:
+  - Status: "delivered"
+  - Dispute status: "none" or "closed"
+  - Delivered more than configured minutes ago (default: 1440 minutes = 24 hours)
+  - Not yet confirmed by buyer
+- Updates: status = "received", payment_status = "complete"
+- Sends email notification to buyer
+
+11.2 Dispute Auto-Escalation Job
+- Runs every hour
+- Automatically escalates disputes to admin if:
+  - Status: "open"
+  - Seller has not responded within configured time (DISPUTE_RESPONSE_HOURS, default: 24 hours)
+- Updates: status = "pending_admin_review"
+- Sends email notification to admin
+
+11.3 System Configuration Initialization
+- Runs on server start
+- Initializes default configuration values if not exists:
+  - MAX_TEMP_CELSIUS: 42
+  - MIN_TEMP_CELSIUS: 2
+  - AUTO_CONFIRM_DAYS: 7
+  - SHIPPED_TO_DELIVERED_MINUTES: 10
+  - DELIVERED_TO_RECEIVED_MINUTES: 1440
+  - DISPUTE_RESPONSE_HOURS: 24
+
+================================================================================
+12. ERROR RESPONSE FORMAT
+================================================================================
+
+All errors follow this format:
+
+{
+  "success": false,
+  "message": "Error message description"
+}
+
+HTTP Status Codes:
+- 200: Success
+- 201: Created
+- 400: Bad Request (validation errors, invalid input)
+- 401: Unauthorized (authentication required)
+- 403: Forbidden (insufficient permissions)
+- 404: Not Found
+- 409: Conflict (duplicate resource)
+- 500: Internal Server Error
+
+================================================================================
+13. AUTHENTICATION
+================================================================================
+
+All protected endpoints require:
+- Cookie: "token" with JWT token
+- Token obtained from login endpoints
+
+Admin-only endpoints require:
+- Valid JWT token
+- Role: "admin" (checked via checkIsAdmin middleware)
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+

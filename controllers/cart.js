@@ -20,16 +20,10 @@ export const addToCart = async (req, res, next) => {
     if (productDoc.isDeleted || !productDoc.isActive) return next(new ErrorHandler("Product is not available", 400));
     if (!productDoc.isAvailable) return next(new ErrorHandler("Product is not available", 400));
 
+    // Check availability but don't deduct quantity yet (will be deducted when order is placed)
     if (quantity > productDoc.quantity) {
       return next(new ErrorHandler(`Only ${productDoc.quantity} units available`, 400));
     }
-    // Deduct stock immediately because item is added to cart
-    productDoc.quantity -= quantity;
-    if (productDoc.quantity < 0) productDoc.quantity = 0;
-
-    await productDoc.save();
-    // Handle zero quantity - set isAvailable to false or delete
-    await handleZeroQuantity(productDoc);
 
     // Prevent farmer from buying their own product
     const uploaderId = productDoc.upLoadedBy.userID;
@@ -187,16 +181,10 @@ export const removeFromCart = async (req, res, next) => {
 
     const index = cart.products.findIndex((item) => item._id.toString() === id);
     if (index === -1) return next(new ErrorHandler("Item not found", 404));
-    // Increase stock back
-    const removedItem = cart.products[index];
-    const prod = await product.findById(removedItem.productId);
-    if (prod) {
-      prod.quantity += removedItem.quantity;
-      prod.isAvailable = true; // Make available again if quantity is restored
-      await prod.save();
-    }
-
-
+    
+    // No need to restore quantity since we don't deduct when adding to cart
+    // Quantity will only be deducted when order is placed
+    
     cart.products.splice(index, 1);
 
     calculateCartTotals(cart);
@@ -219,16 +207,8 @@ export const clearCart = async (req, res, next) => {
   try {
     const cart = await Cart.findOne({ userId: req.user._id }).populate("products.productId");
 
-    if (cart) {
-      for (const item of cart.products) {
-        const prod = await product.findById(item.productId._id);
-        if (prod) {
-          prod.quantity += item.quantity;
-          prod.isAvailable = true; // Make available again if quantity is restored
-          await prod.save();
-        }
-      }
-    }
+    // No need to restore quantity since we don't deduct when adding to cart
+    // Quantity will only be deducted when order is placed
 
     await Cart.findOneAndDelete({ userId: req.user._id });
 
@@ -262,26 +242,17 @@ export const updateCartItem = async (req, res, next) => {
     const productDoc = await product.findById(productId);
     if (!productDoc) return next(new ErrorHandler("Product not found", 404));
 
+    // Check availability but don't deduct quantity yet (will be deducted when order is placed)
     const oldQty = cart.products[index].quantity;     // current qty in cart
     const difference = quantity - oldQty;             // calculate change
 
     if (difference > 0) {
-      // user increased quantity → decrease product stock
+      // user increased quantity → check if available
       if (difference > productDoc.quantity) {
         return next(
           new ErrorHandler(`Only ${productDoc.quantity} more available`, 400)
         );
       }
-
-      productDoc.quantity -= difference;
-      await productDoc.save();
-      // Handle zero quantity - set isAvailable to false or delete
-      await handleZeroQuantity(productDoc);
-    } else if (difference < 0) {
-      // user decreased quantity → restore stock
-      productDoc.quantity += Math.abs(difference);
-      productDoc.isAvailable = true; // Make available again if quantity is restored
-      await productDoc.save();
     }
 
     // update cart quantity
