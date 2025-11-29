@@ -50,7 +50,8 @@ export const createOrder = async (req, res, next) => {
           productId: p.productId._id,
           quantity: p.quantity,
           price: dbProduct.price,
-          status: "processing"
+          status: "pending", // Changed to pending - seller must accept
+          sellerAccepted: null // null = pending, true = accepted, false = rejected
         };
 
         // Add farmerId or supplierId based on product owner
@@ -82,9 +83,8 @@ export const createOrder = async (req, res, next) => {
       notes
     };
 
-    // Calculate initial order status based on product statuses
-    const tempOrder = { products: productsWithVendorInfo };
-    orderData.orderStatus = calculateOrderStatus(tempOrder);
+    // Set initial order status - products are pending seller acceptance
+    orderData.orderStatus = "processing"; // Order is processing, but products are pending
 
     let savedOrder = null;
     let cartDeleted = false;
@@ -112,8 +112,57 @@ export const createOrder = async (req, res, next) => {
         }
       }
 
-      for (const email of uniqueSuppliers.values()) {
-        await sendEmail(email, "New Order Received", "Your product(s) were ordered. Check your dashboard.");
+      // Send notifications to all sellers
+      const sellerNotifications = new Map();
+      
+      for (const productItem of savedOrder.products) {
+        const dbProduct = await product.findById(productItem.productId);
+        if (dbProduct) {
+          const { userID, role } = dbProduct.upLoadedBy;
+          const key = `${role}_${userID.toString()}`;
+          
+          if (!sellerNotifications.has(key)) {
+            let sellerUser = null;
+            if (role === "supplier") {
+              sellerUser = await supplier.findById(userID);
+            } else if (role === "farmer") {
+              sellerUser = await farmer.findById(userID);
+            }
+            
+            if (sellerUser) {
+              sellerNotifications.set(key, {
+                user: sellerUser,
+                role: role
+              });
+              
+              // Send email
+              if (sellerUser.email) {
+                await sendEmail(
+                  sellerUser.email,
+                  "New Order Received - Action Required",
+                  `Dear ${sellerUser.name},\n\nYou have received a new order #${savedOrder._id}.\n\nPlease accept or reject this order from your dashboard.\n\nThank you!`
+                );
+              }
+              
+              // Create notification
+              const { createNotification } = await import("../utils/notifications.js");
+              await createNotification(
+                userID,
+                role,
+                "order_placed",
+                "New Order Received",
+                `You have received a new order #${savedOrder._id}. Please accept or reject it.`,
+                {
+                  relatedId: savedOrder._id,
+                  relatedType: "order",
+                  actionUrl: `/orders/${savedOrder._id}`,
+                  priority: "high",
+                  sendEmail: false // Already sent email above
+                }
+              );
+            }
+          }
+        }
       }
 
       // Populate order with product and vendor information
@@ -137,7 +186,23 @@ export const createOrder = async (req, res, next) => {
       await Cart.findByIdAndDelete(cartId);
       cartDeleted = true;
 
-      await sendEmail(user.email, "Order Placed", "Your order has been successfully placed.");
+      // Send notification to buyer
+      const { createNotification } = await import("../utils/notifications.js");
+      await createNotification(
+        userId,
+        decode,
+        "order_placed",
+        "Order Placed",
+        `Your order #${savedOrder._id} has been placed successfully. Waiting for seller confirmation.`,
+        {
+          relatedId: savedOrder._id,
+          relatedType: "order",
+          actionUrl: `/orders/${savedOrder._id}`,
+          priority: "medium"
+        }
+      );
+      
+      await sendEmail(user.email, "Order Placed", "Your order has been successfully placed. Waiting for seller confirmation.");
 
       return res.status(201).json({ success: true, message: "Order created successfully", order: savedOrder });
     } catch (innerError) {

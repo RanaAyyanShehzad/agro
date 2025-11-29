@@ -15,6 +15,7 @@ import { errorMiddleware } from "./middlewares/error.js";
 import weatherRoutes from "./routes/weatherRoutes.js";
 import chatbotRoutes from "./routes/chatbotRoutes.js";
 import orderMultiVendorRoutes from "./routes/orderMultiVendor.js";
+import notificationRoutes from "./routes/notifications.js";
 import { checkAuth } from "./utils/verifyToken.js";
 
 // Initialize Express app
@@ -56,6 +57,7 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/review",reviewRoutes);
 app.use("/api/chatbot", chatbotRoutes);
+app.use("/api/notifications", notificationRoutes);
 // Error handling middleware
 app.use(errorMiddleware);
 

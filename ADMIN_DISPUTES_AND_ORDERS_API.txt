@@ -1,0 +1,561 @@
+================================================================================
+                    ADMIN DISPUTES & ORDERS APIs
+                    Quick Reference
+================================================================================
+
+BASE URL: https://agrofarm-vd8i.onrender.com (or your server URL)
+
+All endpoints require:
+- Authentication: Cookie with admin JWT token
+- Authorization: Admin role
+
+================================================================================
+1. ORDER MANAGEMENT APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1 Get All Orders (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/orders
+
+Query Parameters (all optional):
+- status: Order status filter
+- paymentStatus: Payment status filter
+- disputeStatus: "none" | "open" | "pending_admin_review" | "closed"
+- startDate: Start date filter (ISO format)
+- endDate: End date filter (ISO format)
+- page: Page number (default: 1)
+- limit: Items per page (default: 20)
+- orderType: "all" | "old" | "multivendor" (default: "all")
+
+Example Request:
+GET /api/v1/admin/orders?status=delivered&page=1&limit=20
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 10,
+  "total": 50,
+  "page": 1,
+  "totalPages": 3,
+  "orders": [
+    {
+      "_id": "order_id_123",
+      "orderType": "multivendor",
+      "status": "delivered",
+      "orderStatus": "delivered",
+      "customerId": {
+        "_id": "customer_id",
+        "name": "John Doe",
+        "email": "john@example.com",
+        "phone": "1234567890",
+        "address": "123 Main St"
+      },
+      "customerModel": "Buyer",
+      "products": [
+        {
+          "_id": "product_item_id",
+          "productId": {
+            "_id": "product_id",
+            "name": "Wheat Seeds",
+            "price": 500,
+            "quantity": 100
+          },
+          "farmerId": {
+            "_id": "farmer_id",
+            "name": "Farmer Name",
+            "email": "farmer@example.com"
+          },
+          "supplierId": null,
+          "quantity": 10,
+          "price": 500,
+          "status": "delivered"
+        }
+      ],
+      "totalPrice": 5000,
+      "paymentInfo": {
+        "method": "easypaisa",
+        "status": "pending",
+        "transactionId": null,
+        "paidAt": null
+      },
+      "payment_status": "pending",
+      "dispute_status": "none",
+      "shippingAddress": {
+        "street": "123 Main St",
+        "city": "Lahore",
+        "zipCode": "54000",
+        "phoneNumber": "1234567890"
+      },
+      "expected_delivery_date": "2024-01-15T00:00:00.000Z",
+      "shippedAt": "2024-01-10T00:00:00.000Z",
+      "deliveredAt": "2024-01-12T00:00:00.000Z",
+      "receivedAt": null,
+      "proofOfDelivery": {
+        "images": ["url1", "url2"],
+        "notes": "Delivered successfully",
+        "uploadedAt": "2024-01-12T00:00:00.000Z"
+      },
+      "createdAt": "2024-01-08T00:00:00.000Z",
+      "updatedAt": "2024-01-12T00:00:00.000Z"
+    }
+  ]
+}
+
+Error Response (404):
+{
+  "success": false,
+  "message": "Orders not found"
+}
+
+Error Response (403):
+{
+  "success": false,
+  "message": "Admin access required. You don't have permission to perform this action."
+}
+
+--------------------------------------------------------------------------------
+1.2 Get Order by ID (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/orders/:orderId
+
+URL Parameters:
+- orderId: Order ID
+
+Example Request:
+GET /api/v1/admin/orders/507f1f77bcf86cd799439011
+
+Response (200 OK):
+{
+  "success": true,
+  "order": {
+    "_id": "507f1f77bcf86cd799439011",
+    "orderType": "multivendor",
+    "status": "delivered",
+    "orderStatus": "delivered",
+    "customerId": {
+      "_id": "customer_id",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "1234567890",
+      "address": "123 Main St"
+    },
+    "customerModel": "Buyer",
+    "products": [
+      {
+        "_id": "product_item_id",
+        "productId": {
+          "_id": "product_id",
+          "name": "Wheat Seeds",
+          "description": "High quality wheat seeds",
+          "price": 500,
+          "quantity": 100,
+          "images": ["image_url"],
+          "category": "Seeds"
+        },
+        "farmerId": {
+          "_id": "farmer_id",
+          "name": "Farmer Name",
+          "email": "farmer@example.com"
+        },
+        "supplierId": null,
+        "quantity": 10,
+        "price": 500,
+        "status": "delivered",
+        "shippedAt": "2024-01-10T00:00:00.000Z",
+        "deliveredAt": "2024-01-12T00:00:00.000Z"
+      }
+    ],
+    "totalPrice": 5000,
+    "paymentInfo": {
+      "method": "easypaisa",
+      "status": "pending",
+      "transactionId": null,
+      "paidAt": null
+    },
+    "payment_status": "pending",
+    "dispute_status": "open",
+    "shippingAddress": {
+      "street": "123 Main St",
+      "city": "Lahore",
+      "zipCode": "54000",
+      "phoneNumber": "1234567890"
+    },
+    "expected_delivery_date": "2024-01-15T00:00:00.000Z",
+    "shippedAt": "2024-01-10T00:00:00.000Z",
+    "deliveredAt": "2024-01-12T00:00:00.000Z",
+    "receivedAt": null,
+    "proofOfDelivery": {
+      "images": ["url1", "url2"],
+      "notes": "Delivered successfully",
+      "uploadedAt": "2024-01-12T00:00:00.000Z"
+    },
+    "proofOfFault": {
+      "images": ["fault_url1"],
+      "description": "Product damaged",
+      "uploadedAt": "2024-01-13T00:00:00.000Z"
+    },
+    "createdAt": "2024-01-08T00:00:00.000Z",
+    "updatedAt": "2024-01-13T00:00:00.000Z"
+  }
+}
+
+Error Response (404):
+{
+  "success": false,
+  "message": "Order not found"
+}
+
+================================================================================
+2. DISPUTE MANAGEMENT APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 Get All Disputes (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/disputes
+
+Query Parameters (all optional):
+- status: "open" | "pending_admin_review" | "closed"
+- disputeType: "non_delivery" | "product_fault" | "wrong_item" | "other"
+- startDate: Start date filter (ISO format)
+- endDate: End date filter (ISO format)
+- page: Page number (default: 1)
+- limit: Items per page (default: 20)
+
+Example Request:
+GET /api/v1/admin/disputes?status=pending_admin_review&page=1&limit=20
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 5,
+  "total": 15,
+  "page": 1,
+  "totalPages": 2,
+  "disputes": [
+    {
+      "_id": "dispute_id_123",
+      "orderId": {
+        "_id": "order_id_123",
+        "orderStatus": "delivered",
+        "status": "delivered",
+        "totalPrice": 5000,
+        "payment_status": "pending",
+        "dispute_status": "open",
+        "createdAt": "2024-01-08T00:00:00.000Z"
+      },
+      "buyerId": {
+        "_id": "buyer_id",
+        "name": "John Doe",
+        "email": "john@example.com",
+        "phone": "1234567890"
+      },
+      "sellerId": {
+        "_id": "seller_id",
+        "name": "Farmer Name",
+        "email": "farmer@example.com",
+        "phone": "0987654321"
+      },
+      "sellerRole": "farmer",
+      "disputeType": "product_fault",
+      "reason": "Product received damaged. Photos attached.",
+      "buyerProof": {
+        "images": [
+          "https://example.com/image1.jpg",
+          "https://example.com/image2.jpg"
+        ],
+        "description": "Product photos showing damage to packaging and contents",
+        "uploadedAt": "2024-01-13T10:00:00.000Z"
+      },
+      "sellerResponse": {
+        "evidence": [
+          "https://example.com/seller_evidence1.jpg"
+        ],
+        "proposal": "I will provide a replacement product within 3 days",
+        "respondedAt": "2024-01-13T14:00:00.000Z"
+      },
+      "status": "pending_admin_review",
+      "buyerAccepted": false,
+      "adminRuling": {
+        "decision": null,
+        "notes": null,
+        "ruledAt": null,
+        "adminId": null
+      },
+      "resolvedAt": null,
+      "createdAt": "2024-01-13T10:00:00.000Z",
+      "updatedAt": "2024-01-13T14:00:00.000Z"
+    }
+  ]
+}
+
+Error Response (403):
+{
+  "success": false,
+  "message": "Admin access required. You don't have permission to perform this action."
+}
+
+--------------------------------------------------------------------------------
+2.2 Get Dispute by ID (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/disputes/:disputeId
+
+URL Parameters:
+- disputeId: Dispute ID
+
+Example Request:
+GET /api/v1/admin/disputes/507f1f77bcf86cd799439011
+
+Response (200 OK):
+{
+  "success": true,
+  "dispute": {
+    "_id": "507f1f77bcf86cd799439011",
+    "orderId": {
+      "_id": "order_id_123",
+      "orderStatus": "delivered",
+      "status": "delivered",
+      "totalPrice": 5000,
+      "payment_status": "pending",
+      "dispute_status": "open",
+      "customerId": {
+        "_id": "customer_id",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "products": [
+        {
+          "productId": {
+            "_id": "product_id",
+            "name": "Wheat Seeds",
+            "price": 500
+          },
+          "quantity": 10,
+          "price": 500
+        }
+      ],
+      "createdAt": "2024-01-08T00:00:00.000Z"
+    },
+    "buyerId": {
+      "_id": "buyer_id",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "1234567890",
+      "address": "123 Main St"
+    },
+    "sellerId": {
+      "_id": "seller_id",
+      "name": "Farmer Name",
+      "email": "farmer@example.com",
+      "phone": "0987654321",
+      "address": "456 Farm Road"
+    },
+    "sellerRole": "farmer",
+    "disputeType": "product_fault",
+    "reason": "Product received damaged. Photos attached showing broken packaging and damaged seeds.",
+    "buyerProof": {
+      "images": [
+        "https://example.com/image1.jpg",
+        "https://example.com/image2.jpg"
+      ],
+      "description": "Product photos showing damage to packaging and contents. Seeds are exposed and contaminated.",
+      "uploadedAt": "2024-01-13T10:00:00.000Z"
+    },
+    "sellerResponse": {
+      "evidence": [
+        "https://example.com/seller_evidence1.jpg",
+        "https://example.com/shipping_proof.jpg"
+      ],
+      "proposal": "I will provide a replacement product within 3 days. The damage appears to be from shipping. I have insurance coverage for this.",
+      "respondedAt": "2024-01-13T14:00:00.000Z"
+    },
+    "status": "pending_admin_review",
+    "buyerAccepted": false,
+    "adminRuling": {
+      "decision": null,
+      "notes": null,
+      "ruledAt": null,
+      "adminId": null
+    },
+    "resolvedAt": null,
+    "createdAt": "2024-01-13T10:00:00.000Z",
+    "updatedAt": "2024-01-13T14:00:00.000Z"
+  }
+}
+
+Error Response (404):
+{
+  "success": false,
+  "message": "Dispute not found"
+}
+
+--------------------------------------------------------------------------------
+2.3 Admin Ruling on Dispute
+--------------------------------------------------------------------------------
+Method: PUT
+Endpoint: /api/v1/order/dispute/:disputeId/admin-ruling
+
+URL Parameters:
+- disputeId: Dispute ID
+
+Request Body:
+{
+  "decision": "buyer_win" | "seller_win",
+  "notes": "Admin's ruling notes and explanation" (optional)
+}
+
+Example Request:
+PUT /api/v1/order/dispute/507f1f77bcf86cd799439011/admin-ruling
+Body:
+{
+  "decision": "buyer_win",
+  "notes": "Based on the evidence provided, the product was indeed damaged. Refund approved."
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Dispute resolved by admin successfully",
+  "dispute": {
+    "_id": "507f1f77bcf86cd799439011",
+    "orderId": "order_id_123",
+    "buyerId": "buyer_id",
+    "sellerId": "seller_id",
+    "sellerRole": "farmer",
+    "disputeType": "product_fault",
+    "reason": "Product received damaged",
+    "buyerProof": {
+      "images": ["url1", "url2"],
+      "description": "Product photos showing damage",
+      "uploadedAt": "2024-01-13T10:00:00.000Z"
+    },
+    "sellerResponse": {
+      "evidence": ["url1"],
+      "proposal": "I will provide a replacement",
+      "respondedAt": "2024-01-13T14:00:00.000Z"
+    },
+    "status": "closed",
+    "buyerAccepted": false,
+    "adminRuling": {
+      "decision": "buyer_win",
+      "notes": "Based on the evidence provided, the product was indeed damaged. Refund approved.",
+      "ruledAt": "2024-01-14T10:00:00.000Z",
+      "adminId": "admin_id"
+    },
+    "resolvedAt": "2024-01-14T10:00:00.000Z",
+    "createdAt": "2024-01-13T10:00:00.000Z",
+    "updatedAt": "2024-01-14T10:00:00.000Z"
+  }
+}
+
+Error Response (400):
+{
+  "success": false,
+  "message": "Decision must be 'buyer_win' or 'seller_win'"
+}
+
+Error Response (400):
+{
+  "success": false,
+  "message": "Dispute is not pending admin review"
+}
+
+Error Response (404):
+{
+  "success": false,
+  "message": "Dispute not found"
+}
+
+================================================================================
+3. STATUS VALUES REFERENCE
+================================================================================
+
+Order Status:
+- "pending"
+- "processing"
+- "shipped"
+- "delivered"
+- "received"
+- "canceled"
+
+Dispute Status:
+- "none" (no dispute)
+- "open" (buyer opened, seller can respond)
+- "pending_admin_review" (escalated to admin)
+- "closed" (resolved)
+
+Payment Status:
+- "pending"
+- "complete"
+- "refunded"
+- "cancelled"
+
+Dispute Type:
+- "non_delivery"
+- "product_fault"
+- "wrong_item"
+- "other"
+
+Admin Ruling Decision:
+- "buyer_win" (refund approved)
+- "seller_win" (payment completed)
+
+================================================================================
+4. FRONTEND INTEGRATION EXAMPLES
+================================================================================
+
+// Fetch all disputes
+const fetchDisputes = async () => {
+  const response = await axios.get(
+    `${API_BASE}/api/v1/admin/disputes?status=pending_admin_review&page=1&limit=50`,
+    { withCredentials: true }
+  );
+  return response.data.disputes;
+};
+
+// Fetch all orders
+const fetchOrders = async () => {
+  const response = await axios.get(
+    `${API_BASE}/api/v1/admin/orders?page=1&limit=20`,
+    { withCredentials: true }
+  );
+  return response.data.orders;
+};
+
+// Get single dispute
+const getDispute = async (disputeId) => {
+  const response = await axios.get(
+    `${API_BASE}/api/v1/admin/disputes/${disputeId}`,
+    { withCredentials: true }
+  );
+  return response.data.dispute;
+};
+
+// Get single order
+const getOrder = async (orderId) => {
+  const response = await axios.get(
+    `${API_BASE}/api/v1/admin/orders/${orderId}`,
+    { withCredentials: true }
+  );
+  return response.data.order;
+};
+
+// Admin ruling
+const makeRuling = async (disputeId, decision, notes) => {
+  const response = await axios.put(
+    `${API_BASE}/api/v1/order/dispute/${disputeId}/admin-ruling`,
+    { decision, notes },
+    { withCredentials: true }
+  );
+  return response.data;
+};
+
+================================================================================
+END OF DOCUMENT
+================================================================================
+

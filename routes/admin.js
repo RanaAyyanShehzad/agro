@@ -11,9 +11,17 @@ import {
   // System configuration
   updateSystemConfig, getSystemConfig,
   // Order management
-  getAllOrdersAdmin, getOrderByIdAdmin,
+  getAllOrdersAdmin, getOrderByIdAdmin, adminChangeOrderStatus, adminChangePaymentStatus,
   // Dispute management
-  getAllDisputes, getDisputeById
+  getAllDisputes, getDisputeById,
+  // User suspension
+  suspendUser, unsuspendUser,
+  // Password management
+  resetUserPassword,
+  // User profile
+  getUserFullProfile,
+  // Audit & History
+  getAuditLogs, getOrderHistory, getProductHistory
 } from "../controllers/admin.js";
 import { isAuthenticated } from "../middlewares/auth.js";
 import { checkIsAdmin } from "../middlewares/checkIsAdmin.js";
@@ -64,9 +72,28 @@ router.put("/config", updateSystemConfig);
 // Order management
 router.get("/orders", getAllOrdersAdmin);
 router.get("/orders/:orderId", getOrderByIdAdmin);
+router.put("/orders/:orderId/status", adminChangeOrderStatus);
+router.put("/orders/:orderId/payment-status", adminChangePaymentStatus);
+router.get("/orders/:orderId/history", getOrderHistory);
 
 // Dispute management
 router.get("/disputes", getAllDisputes);
 router.get("/disputes/:disputeId", getDisputeById);
+
+// User suspension
+router.post("/users/:role/:userId/suspend", suspendUser);
+router.post("/users/:role/:userId/unsuspend", unsuspendUser);
+
+// Password management
+router.post("/users/:role/:userId/reset-password", resetUserPassword);
+
+// User profile
+router.get("/users/:role/:userId/profile", getUserFullProfile);
+
+// Product history
+router.get("/products/:productId/history", getProductHistory);
+
+// Audit logs
+router.get("/audit-logs", getAuditLogs);
 
 export default router;

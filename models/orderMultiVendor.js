@@ -31,8 +31,19 @@ const productItemSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["processing", "confirmed", "shipped", "delivered", "received", "cancelled"],
-    default: "processing"
+    enum: ["pending", "processing", "confirmed", "shipped", "delivered", "received", "cancelled", "rejected"],
+    default: "pending"
+  },
+  sellerAccepted: {
+    type: Boolean,
+    default: null // null = pending, true = accepted, false = rejected
+  },
+  sellerRejectedAt: {
+    type: Date
+  },
+  rejectionReason: {
+    type: String,
+    maxlength: 500
   },
   // Per-product timestamps (for multi-vendor orders)
   shippedAt: {

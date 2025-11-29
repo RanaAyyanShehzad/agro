@@ -9,6 +9,7 @@ import {
   resolveDispute,
   adminRulingOnDispute
 } from "../controllers/orderManagement.js";
+import { acceptOrder, rejectOrder } from "../controllers/orderWorkflow.js";
 import { checkIsAdmin } from "../middlewares/checkIsAdmin.js";
 
 const router=express.Router();
@@ -21,6 +22,10 @@ router.get('/item/:orderId',getOrderById);
 router.put('/cancel/:orderId',cancelOrder);
 router.get('/supplier-orders',getSupplierOrders);
 router.get('/all',getAllOrders);
+
+// Order workflow (seller accept/reject)
+router.post('/:orderId/accept', acceptOrder);
+router.post('/:orderId/reject', rejectOrder);
 
 // Order status updates
 router.put('/update-status/:orderId',updateOrderStatus);

@@ -8,6 +8,8 @@ import { supplier } from "../models/supplier.js";
 import { product } from "../models/products.js";
 import ErrorHandler from "../middlewares/error.js";
 import { sendEmail } from "../utils/sendEmail.js";
+import { createNotification } from "../utils/notifications.js";
+import { logOrderChange } from "../utils/orderHistoryLogger.js";
 import jwt from "jsonwebtoken";
 
 /**
@@ -119,7 +121,19 @@ export const updateOrderToDelivered = async (req, res, next) => {
 
     await order.save();
 
-    // Send email to buyer
+    // Log order change
+    await logOrderChange(
+      order._id,
+      isMultiVendor ? "multivendor" : "old",
+      { userId, role, name: "" },
+      "delivered",
+      "shipped",
+      "delivered",
+      null,
+      "Seller marked order as delivered"
+    );
+
+    // Send email and notification to buyer
     try {
       const customerId = isMultiVendor ? order.customerId : order.userId;
       const customerModel = isMultiVendor ? order.customerModel : (order.userRole === "buyer" ? "Buyer" : "Farmer");
@@ -131,11 +145,36 @@ export const updateOrderToDelivered = async (req, res, next) => {
         customer = await farmer.findById(customerId);
       }
 
-      if (customer && customer.email) {
-        await sendEmail(
-          customer.email,
+      if (customer) {
+        // Get confirmation time limit
+        const config = await SystemConfig.findOne({ 
+          configKey: CONFIG_KEYS.DELIVERED_TO_RECEIVED_MINUTES 
+        });
+        const confirmMinutes = config?.configValue || 1440; // Default 24 hours
+        const confirmHours = Math.floor(confirmMinutes / 60);
+
+        if (customer.email) {
+          await sendEmail(
+            customer.email,
+            "Order Delivered - Please Confirm Receipt",
+            `Dear ${customer.name},\n\nYour order #${orderId} has been delivered.\n\nPlease confirm receipt or report any issues within the next ${confirmHours} hours. If you don't respond, the order will be automatically confirmed.\n\nThank you!`
+          );
+        }
+
+        // Create notification
+        await createNotification(
+          customerId,
+          customerModel.toLowerCase(),
+          "order_delivered",
           "Order Delivered - Please Confirm Receipt",
-          `Dear ${customer.name},\n\nYour order #${orderId} has been delivered.\n\nPlease confirm receipt or report any issues within the next 24 hours.\n\nThank you!`
+          `Your order #${orderId} has been delivered. Please confirm receipt within ${confirmHours} hours.`,
+          {
+            relatedId: order._id,
+            relatedType: "order",
+            actionUrl: `/orders/${orderId}`,
+            priority: "high",
+            sendEmail: false // Already sent email
+          }
         );
       }
     } catch (emailError) {
@@ -220,6 +259,57 @@ export const confirmOrderReceipt = async (req, res, next) => {
 
     await order.save();
 
+    // Log order change
+    await logOrderChange(
+      order._id,
+      isMultiVendor ? "multivendor" : "old",
+      { userId, role, name: "" },
+      "received",
+      "delivered",
+      "received",
+      null,
+      "Buyer confirmed receipt"
+    );
+
+    // Send notification to seller
+    try {
+      if (isMultiVendor) {
+        // Get sellers from products
+        const sellerIds = new Set();
+        order.products.forEach(p => {
+          if (p.farmerId) sellerIds.add({ id: p.farmerId, role: "farmer" });
+          if (p.supplierId) sellerIds.add({ id: p.supplierId, role: "supplier" });
+        });
+
+        for (const sellerInfo of sellerIds) {
+          let seller = null;
+          if (sellerInfo.role === "farmer") {
+            seller = await farmer.findById(sellerInfo.id);
+          } else {
+            seller = await supplier.findById(sellerInfo.id);
+          }
+
+          if (seller) {
+            await createNotification(
+              sellerInfo.id,
+              sellerInfo.role,
+              "order_received",
+              "Order Confirmed by Buyer",
+              `Order #${orderId} has been confirmed as received by the buyer. Payment status updated to complete.`,
+              {
+                relatedId: order._id,
+                relatedType: "order",
+                priority: "medium",
+                sendEmail: true
+              }
+            );
+          }
+        }
+      }
+    } catch (notifError) {
+      console.error("Failed to send confirmation notification:", notifError);
+    }
+
     res.status(200).json({
       success: true,
       message: "Order receipt confirmed successfully",
@@ -269,6 +359,25 @@ export const createDispute = async (req, res, next) => {
         `Cannot create dispute. Order must be in "shipped" or "delivered" status. Current status: "${currentStatus}"`,
         400
       ));
+    }
+
+    // Check if order was delivered and enough time has passed (for non-delivery disputes)
+    if (currentStatus === "delivered") {
+      const config = await SystemConfig.findOne({ 
+        configKey: CONFIG_KEYS.DELIVERED_TO_RECEIVED_MINUTES 
+      });
+      const confirmMinutes = config?.configValue || 1440; // Default 24 hours
+      
+      const deliveredAt = isMultiVendor ? order.deliveredAt : order.deliveryInfo?.actualDeliveryDate;
+      if (deliveredAt) {
+        const timeSinceDelivery = (new Date() - new Date(deliveredAt)) / (1000 * 60); // minutes
+        if (timeSinceDelivery > confirmMinutes && disputeType === "non_delivery") {
+          return next(new ErrorHandler(
+            `Cannot create non-delivery dispute. Order was delivered more than ${confirmMinutes} minutes ago. Please contact support.`,
+            400
+          ));
+        }
+      }
     }
 
     // Check if dispute already exists
@@ -342,7 +451,13 @@ export const createDispute = async (req, res, next) => {
 
     await order.save();
 
-    // Send email to seller
+    // Get dispute response time limit
+    const config = await SystemConfig.findOne({ 
+      configKey: CONFIG_KEYS.DISPUTE_RESPONSE_HOURS 
+    });
+    const responseHours = config?.configValue || 48;
+
+    // Send email and notification to seller
     try {
       let seller = null;
       if (sellerRole === "farmer") {
@@ -351,11 +466,29 @@ export const createDispute = async (req, res, next) => {
         seller = await supplier.findById(sellerId);
       }
 
-      if (seller && seller.email) {
-        await sendEmail(
-          seller.email,
+      if (seller) {
+        if (seller.email) {
+          await sendEmail(
+            seller.email,
+            "Dispute Opened - Action Required",
+            `Dear ${seller.name},\n\nA dispute has been opened for order #${orderId}.\n\nReason: ${reason}\n\nPlease respond with your evidence and proposal within ${responseHours} hours. If you don't respond, the dispute will be automatically escalated to admin.\n\nThank you!`
+          );
+        }
+
+        // Create notification
+        await createNotification(
+          sellerId,
+          sellerRole,
+          "dispute_opened",
           "Dispute Opened - Action Required",
-          `Dear ${seller.name},\n\nA dispute has been opened for order #${orderId}.\n\nReason: ${reason}\n\nPlease respond with your evidence and proposal within 48 hours.\n\nThank you!`
+          `A dispute has been opened for order #${orderId}. Please respond within ${responseHours} hours.`,
+          {
+            relatedId: dispute._id,
+            relatedType: "dispute",
+            actionUrl: `/disputes/${dispute._id}`,
+            priority: "high",
+            sendEmail: false // Already sent email
+          }
         );
       }
     } catch (emailError) {
@@ -407,24 +540,53 @@ export const respondToDispute = async (req, res, next) => {
       return next(new ErrorHandler("Proposal is required", 400));
     }
 
+    // Check if dispute is within response time limit
+    const config = await SystemConfig.findOne({ 
+      configKey: CONFIG_KEYS.DISPUTE_RESPONSE_HOURS 
+    });
+    const responseHours = config?.configValue || 48; // Default 48 hours
+    
+    const disputeAge = (new Date() - dispute.createdAt) / (1000 * 60 * 60); // hours
+    
     // Update dispute
     dispute.sellerResponse = {
       evidence: evidence,
       proposal: proposal.trim(),
       respondedAt: new Date()
     };
+    
+    // If seller responded within time limit, keep status as open
+    // Otherwise, it should already be escalated (handled by cron job)
     await dispute.save();
 
-    // Send email to buyer
+    // Send email and notification to buyer
     try {
       const buyerUser = await buyer.findById(dispute.buyerId) || 
                        await farmer.findById(dispute.buyerId);
       
-      if (buyerUser && buyerUser.email) {
-        await sendEmail(
-          buyerUser.email,
+      if (buyerUser) {
+        if (buyerUser.email) {
+          await sendEmail(
+            buyerUser.email,
+            "Seller Responded to Dispute",
+            `Dear ${buyerUser.name},\n\nThe seller has responded to your dispute for order #${dispute.orderId}.\n\nProposal: ${proposal}\n\nPlease review and accept or reject the proposal.\n\nThank you!`
+          );
+        }
+
+        // Create notification
+        await createNotification(
+          dispute.buyerId,
+          buyerUser.constructor.modelName === "Buyer" ? "buyer" : "farmer",
+          "dispute_response",
           "Seller Responded to Dispute",
-          `Dear ${buyerUser.name},\n\nThe seller has responded to your dispute for order #${dispute.orderId}.\n\nProposal: ${proposal}\n\nPlease review and accept or reject the proposal.\n\nThank you!`
+          `The seller has responded to your dispute for order #${dispute.orderId}. Please review the proposal.`,
+          {
+            relatedId: dispute._id,
+            relatedType: "dispute",
+            actionUrl: `/disputes/${dispute._id}`,
+            priority: "high",
+            sendEmail: false // Already sent email
+          }
         );
       }
     } catch (emailError) {

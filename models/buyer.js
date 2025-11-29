@@ -55,6 +55,18 @@ const schema = new mongoose.Schema({
       deletedAt: {
         type: Date,
         default: null
+      },
+      isSuspended: {
+        type: Boolean,
+        default: false
+      },
+      suspendedUntil: {
+        type: Date,
+        default: null
+      },
+      suspensionReason: {
+        type: String,
+        maxlength: 500
       }
       },{
         timestamps:true,

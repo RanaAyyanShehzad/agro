@@ -2,6 +2,10 @@ import { OrderMultiVendor } from "../models/orderMultiVendor.js";
 import { calculateOrderStatus } from "../utils/orderHelpers.js";
 import ErrorHandler from "../middlewares/error.js";
 import { getRole } from "../middlewares/orderMiddleware.js";
+import { createNotification } from "../utils/notifications.js";
+import { logOrderChange } from "../utils/orderHistoryLogger.js";
+import { buyer } from "../models/buyer.js";
+import { farmer } from "../models/farmer.js";
 
 /**
  * Update product status in an order
@@ -38,10 +42,67 @@ export const updateProductStatus = async (req, res, next) => {
     }
 
     // Recalculate order status
+    const oldOrderStatus = order.orderStatus;
     order.orderStatus = calculateOrderStatus(order);
+
+    // Set order-level timestamps
+    if (status === 'shipped' && !order.shippedAt) {
+      order.shippedAt = new Date();
+      if (!order.expected_delivery_date) {
+        const expectedDate = new Date();
+        expectedDate.setDate(expectedDate.getDate() + 7);
+        order.expected_delivery_date = expectedDate;
+      }
+    }
+    
+    if (status === 'delivered' && !order.deliveredAt) {
+      order.deliveredAt = new Date();
+    }
 
     // Save order
     await order.save();
+
+    // Log order change
+    await logOrderChange(
+      order._id,
+      "multivendor",
+      { userId: req.user?._id || "", role: getRole(req).role, name: req.user?.name || "" },
+      status === "shipped" ? "shipped" : status === "delivered" ? "delivered" : "status",
+      oldOrderStatus,
+      order.orderStatus,
+      null,
+      `Product status updated to ${status}`
+    );
+
+    // Send notification to customer when order is shipped or delivered
+    if (status === "shipped" || status === "delivered") {
+      try {
+        const customer = await (order.customerModel === "Buyer" 
+          ? buyer.findById(order.customerId)
+          : farmer.findById(order.customerId));
+
+        if (customer) {
+          await createNotification(
+            order.customerId,
+            order.customerModel.toLowerCase(),
+            status === "shipped" ? "order_shipped" : "order_delivered",
+            status === "shipped" ? "Order Shipped" : "Order Delivered",
+            status === "shipped" 
+              ? `Your order #${order._id} has been shipped and is on its way.`
+              : `Your order #${order._id} has been delivered. Please confirm receipt.`,
+            {
+              relatedId: order._id,
+              relatedType: "order",
+              actionUrl: `/orders/${order._id}`,
+              priority: "medium",
+              sendEmail: true
+            }
+          );
+        }
+      } catch (notifError) {
+        console.error("Failed to send order status notification:", notifError);
+      }
+    }
 
     // Populate and return updated order
     const updatedOrder = await OrderMultiVendor.findById(order._id)

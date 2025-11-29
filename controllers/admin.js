@@ -26,6 +26,12 @@ import { SystemConfig, CONFIG_KEYS } from "../models/systemConfig.js";
 import { Dispute } from "../models/dispute.js";
 import { Order } from "../models/order.js";
 import { OrderMultiVendor } from "../models/orderMultiVendor.js";
+import { AuditLog } from "../models/auditLog.js";
+import { OrderHistory } from "../models/orderHistory.js";
+import { ProductHistory } from "../models/productHistory.js";
+import { createAuditLog } from "../utils/auditLogger.js";
+import { logOrderChange } from "../utils/orderHistoryLogger.js";
+import { createNotification } from "../utils/notifications.js";
 
 
 // Controller functions
@@ -1203,6 +1209,632 @@ export const getDisputeById = async (req, res, next) => {
     res.status(200).json({
       success: true,
       dispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// USER SUSPENSION MANAGEMENT
+// ============================================
+
+/**
+ * Suspend user account
+ */
+export const suspendUser = async (req, res, next) => {
+  try {
+    const { userId, role } = req.params;
+    const { duration, reason } = req.body; // duration in days
+    const adminId = req.adminId;
+    const adminName = req.user?.name || "Admin";
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role", 400));
+    }
+
+    if (!duration || duration <= 0) {
+      return next(new ErrorHandler("Suspension duration (in days) is required", 400));
+    }
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    const suspendedUntil = new Date();
+    suspendedUntil.setDate(suspendedUntil.getDate() + parseInt(duration));
+
+    user.isSuspended = true;
+    user.suspendedUntil = suspendedUntil;
+    user.suspensionReason = reason || "Policy violation";
+    user.isActive = false;
+
+    await user.save();
+
+    // Create audit log
+    await createAuditLog(
+      adminId,
+      adminName,
+      "user_suspended",
+      "user",
+      userId,
+      {
+        entityName: user.email,
+        details: { duration, reason: user.suspensionReason, suspendedUntil }
+      }
+    );
+
+    // Send notification
+    await createNotification(
+      userId,
+      role,
+      "account_suspended",
+      "Account Suspended",
+      `Your account has been suspended until ${suspendedUntil.toLocaleDateString()}. Reason: ${user.suspensionReason}`,
+      { priority: "high", sendEmail: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `User suspended until ${suspendedUntil.toLocaleDateString()}`,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isSuspended: user.isSuspended,
+        suspendedUntil: user.suspendedUntil,
+        suspensionReason: user.suspensionReason
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Lift user suspension
+ */
+export const unsuspendUser = async (req, res, next) => {
+  try {
+    const { userId, role } = req.params;
+    const adminId = req.adminId;
+    const adminName = req.user?.name || "Admin";
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role", 400));
+    }
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    if (!user.isSuspended) {
+      return next(new ErrorHandler("User is not suspended", 400));
+    }
+
+    user.isSuspended = false;
+    user.suspendedUntil = null;
+    user.suspensionReason = null;
+    user.isActive = true;
+
+    await user.save();
+
+    // Create audit log
+    await createAuditLog(
+      adminId,
+      adminName,
+      "user_unsuspended",
+      "user",
+      userId,
+      {
+        entityName: user.email
+      }
+    );
+
+    // Send notification
+    await createNotification(
+      userId,
+      role,
+      "account_activated",
+      "Account Suspension Lifted",
+      "Your account suspension has been lifted. You can now access your account normally.",
+      { priority: "medium", sendEmail: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "User suspension lifted successfully",
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isSuspended: user.isSuspended
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// PASSWORD MANAGEMENT
+// ============================================
+
+/**
+ * Reset user password (admin can force reset)
+ */
+export const resetUserPassword = async (req, res, next) => {
+  try {
+    const { userId, role } = req.params;
+    const { generateTemporary } = req.body; // If true, generate temp password
+    const adminId = req.adminId;
+    const adminName = req.user?.name || "Admin";
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role", 400));
+    }
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    const user = await UserModel.findById(userId).select("+password");
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    let newPassword;
+    if (generateTemporary) {
+      // Generate temporary password
+      newPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + "123";
+    } else {
+      // Admin provides new password
+      const { newPassword: providedPassword } = req.body;
+      if (!providedPassword) {
+        return next(new ErrorHandler("New password is required", 400));
+      }
+      if (!validatePassword(providedPassword, next)) return;
+      newPassword = providedPassword;
+    }
+
+    user.password = await hashPassword(newPassword);
+    await user.save();
+
+    // Create audit log
+    await createAuditLog(
+      adminId,
+      adminName,
+      "user_password_reset",
+      "user",
+      userId,
+      {
+        entityName: user.email,
+        details: { temporaryPassword: generateTemporary }
+      }
+    );
+
+    // Send email with new password
+    if (user.email) {
+      await sendEmail(
+        user.email,
+        "Password Reset by Admin",
+        `Dear ${user.name},\n\nYour password has been reset by an administrator.\n\n${generateTemporary ? `Your temporary password is: ${newPassword}\n\nPlease change this password after logging in.` : "Please use your new password to login."}\n\nThank you!`
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset successfully",
+      ...(generateTemporary && { temporaryPassword: newPassword })
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// VIEW FULL USER PROFILE
+// ============================================
+
+/**
+ * Get full user profile with related data
+ */
+export const getUserFullProfile = async (req, res, next) => {
+  try {
+    const { userId, role } = req.params;
+
+    if (!["buyer", "farmer", "supplier"].includes(role)) {
+      return next(new ErrorHandler("Invalid role", 400));
+    }
+
+    let UserModel;
+    if (role === "buyer") UserModel = buyer;
+    else if (role === "farmer") UserModel = farmer;
+    else UserModel = supplier;
+
+    const user = await UserModel.findById(userId)
+      .select("+failedLoginAtempt +lockUntil");
+
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    const profile = {
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        address: user.address,
+        img: user.img,
+        verified: user.verified,
+        isActive: user.isActive,
+        isAccountDeleted: user.isAccountDeleted,
+        isSuspended: user.isSuspended,
+        suspendedUntil: user.suspendedUntil,
+        suspensionReason: user.suspensionReason,
+        failedLoginAtempt: user.failedLoginAtempt,
+        lockUntil: user.lockUntil,
+        deletedAt: user.deletedAt,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
+    };
+
+    // Add role-specific data
+    if (role === "buyer") {
+      // Get buyer's orders
+      const orders = await OrderMultiVendor.find({ customerId: userId })
+        .populate("products.productId", "name price images")
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+
+      profile.orders = orders;
+      profile.totalOrders = await OrderMultiVendor.countDocuments({ customerId: userId });
+    } else if (role === "farmer" || role === "supplier") {
+      // Get seller's products
+      const products = await product.find({ "upLoadedBy.userID": userId })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+
+      profile.products = products;
+      profile.totalProducts = await product.countDocuments({ "upLoadedBy.userID": userId });
+
+      // Get seller's orders (orders where their products are included)
+      const sellerOrders = await OrderMultiVendor.find({
+        $or: [
+          { "products.farmerId": userId },
+          { "products.supplierId": userId }
+        ]
+      })
+        .populate("customerId", "name email phone")
+        .populate("products.productId", "name price")
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+
+      // Filter to only show orders with seller's products
+      const filteredOrders = sellerOrders.map(order => {
+        const sellerProducts = order.products.filter(p => 
+          (role === "farmer" && p.farmerId && p.farmerId.toString() === userId) ||
+          (role === "supplier" && p.supplierId && p.supplierId.toString() === userId)
+        );
+        return {
+          ...order,
+          products: sellerProducts
+        };
+      }).filter(order => order.products.length > 0);
+
+      profile.ordersReceived = filteredOrders;
+      profile.totalOrdersReceived = await OrderMultiVendor.countDocuments({
+        $or: [
+          { "products.farmerId": userId },
+          { "products.supplierId": userId }
+        ]
+      });
+
+      // Get delivered orders count
+      const deliveredOrders = filteredOrders.filter(order => 
+        order.orderStatus === "delivered" || order.orderStatus === "received"
+      );
+      profile.ordersDelivered = deliveredOrders.length;
+    }
+
+    res.status(200).json({
+      success: true,
+      profile
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// ADMIN ORDER OVERRIDE
+// ============================================
+
+/**
+ * Admin change order status (override)
+ */
+export const adminChangeOrderStatus = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { status, reason } = req.body;
+    const adminId = req.adminId;
+    const adminName = req.user?.name || "Admin";
+
+    // Find order
+    let order = await OrderMultiVendor.findById(orderId);
+    let isMultiVendor = true;
+    
+    if (!order) {
+      order = await Order.findById(orderId);
+      isMultiVendor = false;
+    }
+
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
+    const oldStatus = isMultiVendor ? order.orderStatus : order.status;
+
+    if (!status) {
+      return next(new ErrorHandler("Status is required", 400));
+    }
+
+    // Validate status
+    const validStatuses = isMultiVendor 
+      ? ["processing", "confirmed", "shipped", "delivered", "received", "cancelled"]
+      : ["pending", "processing", "shipped", "delivered", "received", "canceled"];
+
+    if (!validStatuses.includes(status)) {
+      return next(new ErrorHandler(`Invalid status. Valid statuses: ${validStatuses.join(", ")}`, 400));
+    }
+
+    // Update status
+    if (isMultiVendor) {
+      order.orderStatus = status;
+      if (status === "shipped") order.shippedAt = new Date();
+      if (status === "delivered") order.deliveredAt = new Date();
+      if (status === "received") order.receivedAt = new Date();
+    } else {
+      order.status = status;
+      if (status === "shipped") order.shippedAt = new Date();
+      if (status === "delivered") order.deliveredAt = new Date();
+      if (status === "received") order.receivedAt = new Date();
+    }
+
+    await order.save();
+
+    // Log order change
+    await logOrderChange(
+      order._id,
+      isMultiVendor ? "multivendor" : "old",
+      { userId: adminId, role: "admin", name: adminName },
+      "status",
+      oldStatus,
+      status,
+      reason || null,
+      "Admin override"
+    );
+
+    // Create audit log
+    await createAuditLog(
+      adminId,
+      adminName,
+      "order_status_changed",
+      "order",
+      order._id,
+      {
+        entityName: `Order ${order._id}`,
+        details: { oldStatus, newStatus: status, reason }
+      }
+    );
+
+    // Send notification to customer
+    const customerId = isMultiVendor ? order.customerId : order.userId;
+    const customerModel = isMultiVendor ? order.customerModel : (order.userRole === "buyer" ? "Buyer" : "Farmer");
+    
+    let customer = null;
+    if (customerModel === "Buyer" || customerModel === "buyer") {
+      customer = await buyer.findById(customerId);
+    } else {
+      customer = await farmer.findById(customerId);
+    }
+
+    if (customer) {
+      await createNotification(
+        customerId,
+        customerModel.toLowerCase(),
+        "order_status_changed",
+        "Order Status Updated",
+        `Your order #${orderId} status has been changed to ${status} by admin.${reason ? ` Reason: ${reason}` : ""}`,
+        {
+          relatedId: order._id,
+          relatedType: "order",
+          priority: "high",
+          sendEmail: true
+        }
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Order status changed successfully",
+      order
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Admin change payment status
+ */
+export const adminChangePaymentStatus = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentStatus, reason } = req.body;
+    const adminId = req.adminId;
+    const adminName = req.user?.name || "Admin";
+
+    // Find order
+    let order = await OrderMultiVendor.findById(orderId);
+    let isMultiVendor = true;
+    
+    if (!order) {
+      order = await Order.findById(orderId);
+      isMultiVendor = false;
+    }
+
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
+    const oldPaymentStatus = order.payment_status;
+
+    if (!paymentStatus) {
+      return next(new ErrorHandler("Payment status is required", 400));
+    }
+
+    const validStatuses = ["pending", "complete", "refunded", "cancelled"];
+    if (!validStatuses.includes(paymentStatus)) {
+      return next(new ErrorHandler(`Invalid payment status. Valid statuses: ${validStatuses.join(", ")}`, 400));
+    }
+
+    // Update payment status
+    order.payment_status = paymentStatus;
+    if (order.paymentInfo) {
+      order.paymentInfo.status = paymentStatus === "complete" ? "completed" : paymentStatus;
+      if (paymentStatus === "complete") {
+        order.paymentInfo.paidAt = new Date();
+      }
+    }
+
+    await order.save();
+
+    // Log order change
+    await logOrderChange(
+      order._id,
+      isMultiVendor ? "multivendor" : "old",
+      { userId: adminId, role: "admin", name: adminName },
+      "payment_status",
+      oldPaymentStatus,
+      paymentStatus,
+      reason || null,
+      "Admin override"
+    );
+
+    // Create audit log
+    await createAuditLog(
+      adminId,
+      adminName,
+      "order_payment_changed",
+      "order",
+      order._id,
+      {
+        entityName: `Order ${order._id}`,
+        details: { oldPaymentStatus, newPaymentStatus: paymentStatus, reason }
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Payment status changed successfully",
+      order
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// AUDIT LOGS & HISTORY
+// ============================================
+
+/**
+ * Get audit logs
+ */
+export const getAuditLogs = async (req, res, next) => {
+  try {
+    const { adminId, action, entityType, entityId, startDate, endDate, page = 1, limit = 50 } = req.query;
+
+    const { getAuditLogs: getLogs } = await import("../utils/auditLogger.js");
+    const result = await getLogs({
+      adminId,
+      action,
+      entityType,
+      entityId,
+      startDate,
+      endDate,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get order history
+ */
+export const getOrderHistory = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { page = 1, limit = 50 } = req.query;
+
+    const { getOrderHistory: getHistory } = await import("../utils/orderHistoryLogger.js");
+    const result = await getHistory(orderId, {
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get product change history
+ */
+export const getProductHistory = async (req, res, next) => {
+  try {
+    const { productId } = req.params;
+    const { page = 1, limit = 50 } = req.query;
+
+    const { getProductHistory: getHistory } = await import("../utils/productHistoryLogger.js");
+    const result = await getHistory(productId, {
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+
+    res.status(200).json({
+      success: true,
+      ...result
     });
   } catch (error) {
     next(error);
