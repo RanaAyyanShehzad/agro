@@ -975,3 +975,236 @@ export const getSystemConfig = async (req, res, next) => {
     next(error);
   }
 };
+
+// ============================================
+// ORDER MANAGEMENT FOR ADMIN
+// ============================================
+
+/**
+ * Get all orders (both Order and OrderMultiVendor models)
+ */
+export const getAllOrdersAdmin = async (req, res, next) => {
+  try {
+    const { 
+      status, 
+      paymentStatus, 
+      disputeStatus,
+      startDate, 
+      endDate, 
+      page = 1, 
+      limit = 20,
+      orderType = "all" // "all", "old", "multivendor"
+    } = req.query;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const allOrders = [];
+
+    // Get orders from OrderMultiVendor (new system)
+    if (orderType === "all" || orderType === "multivendor") {
+      const multiVendorFilter = {};
+      if (status) multiVendorFilter.orderStatus = status;
+      if (paymentStatus) multiVendorFilter.payment_status = paymentStatus;
+      if (disputeStatus) multiVendorFilter.dispute_status = disputeStatus;
+      if (startDate || endDate) {
+        multiVendorFilter.createdAt = {};
+        if (startDate) multiVendorFilter.createdAt.$gte = new Date(startDate);
+        if (endDate) multiVendorFilter.createdAt.$lte = new Date(endDate);
+      }
+
+      const multiVendorOrders = await OrderMultiVendor.find(multiVendorFilter)
+        .populate("customerId", "name email phone address")
+        .populate("products.productId")
+        .populate("products.farmerId", "name email")
+        .populate("products.supplierId", "name email")
+        .sort({ createdAt: -1 })
+        .skip(orderType === "all" ? skip : 0)
+        .limit(orderType === "all" ? parseInt(limit) : 1000)
+        .lean();
+
+      allOrders.push(...multiVendorOrders.map(order => ({
+        ...order,
+        orderType: "multivendor",
+        status: order.orderStatus
+      })));
+    }
+
+    // Get orders from old Order model
+    if (orderType === "all" || orderType === "old") {
+      const oldOrderFilter = {};
+      if (status) oldOrderFilter.status = status;
+      if (paymentStatus) {
+        oldOrderFilter["paymentInfo.status"] = paymentStatus;
+      }
+      if (disputeStatus) oldOrderFilter.dispute_status = disputeStatus;
+      if (startDate || endDate) {
+        oldOrderFilter.createdAt = {};
+        if (startDate) oldOrderFilter.createdAt.$gte = new Date(startDate);
+        if (endDate) oldOrderFilter.createdAt.$lte = new Date(endDate);
+      }
+
+      const oldOrders = await Order.find(oldOrderFilter)
+        .populate("products.productId")
+        .populate("userId", "name email phone address")
+        .sort({ createdAt: -1 })
+        .skip(orderType === "all" ? skip : 0)
+        .limit(orderType === "all" ? parseInt(limit) : 1000)
+        .lean();
+
+      allOrders.push(...oldOrders.map(order => ({
+        ...order,
+        orderType: "old",
+        customerId: order.userId,
+        customerModel: order.userRole === "buyer" ? "Buyer" : "Farmer"
+      })));
+    }
+
+    // Sort all orders by creation date
+    allOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // Apply pagination if getting all orders
+    const paginatedOrders = orderType === "all" 
+      ? allOrders.slice(skip, skip + parseInt(limit))
+      : allOrders;
+
+    const total = allOrders.length;
+
+    res.status(200).json({
+      success: true,
+      count: paginatedOrders.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      orders: paginatedOrders
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get order by ID (works with both models)
+ */
+export const getOrderByIdAdmin = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+
+    // Try OrderMultiVendor first
+    let order = await OrderMultiVendor.findById(orderId)
+      .populate("customerId", "name email phone address")
+      .populate("products.productId")
+      .populate("products.farmerId", "name email")
+      .populate("products.supplierId", "name email");
+
+    if (order) {
+      return res.status(200).json({
+        success: true,
+        order: {
+          ...order.toObject(),
+          orderType: "multivendor",
+          status: order.orderStatus
+        }
+      });
+    }
+
+    // Try old Order model
+    order = await Order.findById(orderId)
+      .populate("products.productId")
+      .populate("userId", "name email phone address");
+
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
+    res.status(200).json({
+      success: true,
+      order: {
+        ...order.toObject(),
+        orderType: "old",
+        customerId: order.userId,
+        customerModel: order.userRole === "buyer" ? "Buyer" : "Farmer"
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// DISPUTE MANAGEMENT FOR ADMIN
+// ============================================
+
+/**
+ * Get all disputes
+ */
+export const getAllDisputes = async (req, res, next) => {
+  try {
+    const { 
+      status, 
+      disputeType,
+      startDate, 
+      endDate, 
+      page = 1, 
+      limit = 20 
+    } = req.query;
+
+    const filter = {};
+    if (status) filter.status = status;
+    if (disputeType) filter.disputeType = disputeType;
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate);
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const disputes = await Dispute.find(filter)
+      .populate("orderId")
+      .populate("buyerId", "name email phone")
+      .populate("sellerId", "name email phone")
+      .populate("adminRuling.adminId", "name email")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Dispute.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: disputes.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      disputes
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get dispute by ID
+ */
+export const getDisputeById = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+
+    const dispute = await Dispute.findById(disputeId)
+      .populate("orderId")
+      .populate("buyerId", "name email phone address")
+      .populate("sellerId", "name email phone address")
+      .populate("adminRuling.adminId", "name email");
+
+    if (!dispute) {
+      return next(new ErrorHandler("Dispute not found", 404));
+    }
+
+    res.status(200).json({
+      success: true,
+      dispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};

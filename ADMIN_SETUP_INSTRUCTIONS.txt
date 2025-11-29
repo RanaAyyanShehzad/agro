@@ -1,0 +1,170 @@
+================================================================================
+                    ADMIN ACCOUNT SETUP INSTRUCTIONS
+================================================================================
+
+There are NO default admin credentials. You must create an admin account first.
+
+================================================================================
+STEP 1: REGISTER ADMIN ACCOUNT
+================================================================================
+
+Method: POST
+Endpoint: /api/v1/admin/new
+Auth: Not required (public endpoint)
+
+Request Body:
+{
+  "name": "Admin Name",
+  "email": "admin@example.com",
+  "password": "YourSecurePassword123",
+  "phone": "1234567890",
+  "address": "Admin Address"
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "OTP sent to email. Please verify to complete registration."
+}
+
+Note: An OTP will be sent to the provided email address.
+
+================================================================================
+STEP 2: VERIFY EMAIL WITH OTP
+================================================================================
+
+Method: POST
+Endpoint: /api/v1/admin/verify
+Auth: Not required
+
+Request Body:
+{
+  "email": "admin@example.com",
+  "otp": "123456"  // 6-digit OTP received via email
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "Account verified successfully."
+}
+
+================================================================================
+STEP 3: LOGIN AS ADMIN
+================================================================================
+
+Method: POST
+Endpoint: /api/v1/admin/login
+Auth: Not required
+
+Request Body:
+{
+  "email": "admin@example.com",
+  "password": "YourSecurePassword123"
+}
+
+Response (201 Created):
+{
+  "success": true,
+  "message": "Welcome back, Admin Name",
+  "user": {
+    "_id": "admin_id",
+    "name": "Admin Name",
+    "email": "admin@example.com",
+    ...
+  }
+}
+
+Note: A cookie with JWT token will be set automatically. This token is required
+for all admin management endpoints.
+
+================================================================================
+ALTERNATIVE: CREATE ADMIN DIRECTLY IN DATABASE (For Development)
+================================================================================
+
+If you need to create an admin account directly in the database (for testing):
+
+1. Connect to your MongoDB database
+2. Use MongoDB Compass or mongo shell
+3. Insert admin document:
+
+db.admins.insertOne({
+  "name": "Admin",
+  "email": "admin@example.com",
+  "password": "$2b$10$hashedPasswordHere",  // Use bcrypt hash
+  "phone": "1234567890",
+  "address": "Admin Address",
+  "verified": true,
+  "failedLoginAtempt": 0,
+  "createdAt": new Date(),
+  "updatedAt": new Date()
+})
+
+To generate bcrypt hash, you can use Node.js:
+const bcrypt = require('bcrypt');
+const hash = await bcrypt.hash('YourPassword123', 10);
+console.log(hash);
+
+================================================================================
+RESET PASSWORD (If You Forgot)
+================================================================================
+
+Method: POST
+Endpoint: /api/v1/admin/forgot-password
+Auth: Not required
+
+Request Body:
+{
+  "email": "admin@example.com"
+  // OR
+  "phone": "1234567890"
+}
+
+Response (200 OK):
+{
+  "success": true,
+  "message": "OTP sent to your email"
+}
+
+Then use the OTP to reset password:
+
+Method: POST
+Endpoint: /api/v1/admin/reset-password
+Auth: Not required
+
+Request Body:
+{
+  "email": "admin@example.com",
+  "otp": "123456",
+  "newPassword": "NewSecurePassword123"
+}
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+1. Admin account must be verified (verified: true) before login
+2. Account locks after 5 failed login attempts for 30 minutes
+3. OTP expires after 30 minutes
+4. Password must meet validation requirements (check Validation.js)
+5. All admin management endpoints require:
+   - Valid JWT token in cookie
+   - Role: "admin"
+
+================================================================================
+QUICK TEST CREDENTIALS (After Registration)
+================================================================================
+
+Example credentials (you must register these first):
+Email: admin@farmconnect.com
+Password: Admin@123456
+
+But remember: You need to:
+1. Register this account
+2. Verify with OTP sent to email
+3. Then login
+
+================================================================================
+END OF INSTRUCTIONS
+================================================================================
+

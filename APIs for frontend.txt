@@ -777,6 +777,199 @@ Admin-only endpoints require:
 - Role: "admin"
 
 ================================================================================
+11. ADMIN ORDER & DISPUTE MANAGEMENT APIs
+================================================================================
+
+--------------------------------------------------------------------------------
+11.1 Get All Orders (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/orders
+Auth: Required (Admin only)
+
+Query Parameters:
+- status (optional): Filter by order status
+- paymentStatus (optional): Filter by payment status
+- disputeStatus (optional): Filter by dispute status ("none", "open", "pending_admin_review", "closed")
+- startDate (optional): Filter orders from this date (ISO format)
+- endDate (optional): Filter orders until this date (ISO format)
+- page (optional): Page number (default: 1)
+- limit (optional): Items per page (default: 20)
+- orderType (optional): "all" | "old" | "multivendor" (default: "all")
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 10,
+  "total": 50,
+  "page": 1,
+  "totalPages": 3,
+  "orders": [
+    {
+      "_id": "order_id",
+      "orderType": "multivendor",
+      "status": "delivered",
+      "orderStatus": "delivered",
+      "customerId": {
+        "_id": "customer_id",
+        "name": "Customer Name",
+        "email": "customer@example.com",
+        "phone": "1234567890",
+        "address": "Customer Address"
+      },
+      "products": [...],
+      "totalPrice": 5000,
+      "payment_status": "pending",
+      "dispute_status": "none",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      ...
+    }
+  ]
+}
+
+Note: Returns orders from both Order and OrderMultiVendor models. Each order includes
+an "orderType" field indicating "multivendor" or "old".
+
+--------------------------------------------------------------------------------
+11.2 Get Order by ID (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/orders/:orderId
+Auth: Required (Admin only)
+
+URL Parameters:
+- orderId: Order ID
+
+Response (200 OK):
+{
+  "success": true,
+  "order": {
+    "_id": "order_id",
+    "orderType": "multivendor",
+    "status": "delivered",
+    "customerId": { ... },
+    "products": [...],
+    "totalPrice": 5000,
+    "payment_status": "complete",
+    "dispute_status": "none",
+    "proofOfDelivery": { ... },
+    "proofOfFault": { ... },
+    ...
+  }
+}
+
+Error Responses:
+- 404: Order not found
+
+--------------------------------------------------------------------------------
+11.3 Get All Disputes (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/disputes
+Auth: Required (Admin only)
+
+Query Parameters:
+- status (optional): Filter by status ("open", "pending_admin_review", "closed")
+- disputeType (optional): Filter by type ("non_delivery", "product_fault", "wrong_item", "other")
+- startDate (optional): Filter disputes from this date (ISO format)
+- endDate (optional): Filter disputes until this date (ISO format)
+- page (optional): Page number (default: 1)
+- limit (optional): Items per page (default: 20)
+
+Response (200 OK):
+{
+  "success": true,
+  "count": 5,
+  "total": 15,
+  "page": 1,
+  "totalPages": 2,
+  "disputes": [
+    {
+      "_id": "dispute_id",
+      "orderId": {
+        "_id": "order_id",
+        "status": "delivered",
+        "totalPrice": 5000,
+        ...
+      },
+      "buyerId": {
+        "_id": "buyer_id",
+        "name": "Buyer Name",
+        "email": "buyer@example.com",
+        "phone": "1234567890"
+      },
+      "sellerId": {
+        "_id": "seller_id",
+        "name": "Seller Name",
+        "email": "seller@example.com",
+        "phone": "0987654321"
+      },
+      "sellerRole": "farmer",
+      "disputeType": "product_fault",
+      "reason": "Product received damaged",
+      "buyerProof": {
+        "images": ["url1", "url2"],
+        "description": "Product photos showing damage",
+        "uploadedAt": "2024-01-01T00:00:00.000Z"
+      },
+      "sellerResponse": {
+        "evidence": ["url1"],
+        "proposal": "I will provide a replacement",
+        "respondedAt": "2024-01-01T01:00:00.000Z"
+      },
+      "status": "pending_admin_review",
+      "buyerAccepted": false,
+      "adminRuling": {
+        "decision": null,
+        "notes": null,
+        "ruledAt": null,
+        "adminId": null
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T01:00:00.000Z"
+    }
+  ]
+}
+
+--------------------------------------------------------------------------------
+11.4 Get Dispute by ID (Admin)
+--------------------------------------------------------------------------------
+Method: GET
+Endpoint: /api/v1/admin/disputes/:disputeId
+Auth: Required (Admin only)
+
+URL Parameters:
+- disputeId: Dispute ID
+
+Response (200 OK):
+{
+  "success": true,
+  "dispute": {
+    "_id": "dispute_id",
+    "orderId": { ... },
+    "buyerId": { ... },
+    "sellerId": { ... },
+    "disputeType": "product_fault",
+    "reason": "Product received damaged",
+    "buyerProof": { ... },
+    "sellerResponse": { ... },
+    "status": "pending_admin_review",
+    "adminRuling": {
+      "decision": null,
+      "notes": null,
+      "ruledAt": null,
+      "adminId": null
+    },
+    ...
+  }
+}
+
+Error Responses:
+- 404: Dispute not found
+
+Note: Use this endpoint to get full dispute details before making an admin ruling.
+
+================================================================================
 END OF API DOCUMENTATION
 ================================================================================
 

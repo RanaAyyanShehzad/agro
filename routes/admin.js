@@ -9,7 +9,11 @@ import {
   // Product management
   getProductsByStatus, toggleProductVisibility,
   // System configuration
-  updateSystemConfig, getSystemConfig
+  updateSystemConfig, getSystemConfig,
+  // Order management
+  getAllOrdersAdmin, getOrderByIdAdmin,
+  // Dispute management
+  getAllDisputes, getDisputeById
 } from "../controllers/admin.js";
 import { isAuthenticated } from "../middlewares/auth.js";
 import { checkIsAdmin } from "../middlewares/checkIsAdmin.js";
@@ -56,5 +60,13 @@ router.put("/products/:productId/visibility", toggleProductVisibility);
 // System configuration
 router.get("/config", getSystemConfig);
 router.put("/config", updateSystemConfig);
+
+// Order management
+router.get("/orders", getAllOrdersAdmin);
+router.get("/orders/:orderId", getOrderByIdAdmin);
+
+// Dispute management
+router.get("/disputes", getAllDisputes);
+router.get("/disputes/:disputeId", getDisputeById);
 
 export default router;
