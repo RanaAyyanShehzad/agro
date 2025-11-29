@@ -7,7 +7,11 @@ import {
   createDispute, 
   respondToDispute, 
   resolveDispute,
-  adminRulingOnDispute
+  adminRulingOnDispute,
+  getSellerDisputes,
+  getSellerDisputeById,
+  getBuyerDisputes,
+  getBuyerDisputeById
 } from "../controllers/orderManagement.js";
 import { acceptOrder, rejectOrder } from "../controllers/orderWorkflow.js";
 import { checkIsAdmin } from "../middlewares/checkIsAdmin.js";
@@ -34,6 +38,10 @@ router.put('/confirm-receipt/:orderId', confirmOrderReceipt);
 
 // Dispute management
 router.post('/dispute/:orderId', createDispute);
+router.get('/disputes', getSellerDisputes); // Seller get all disputes (farmer/supplier only)
+router.get('/disputes/buyer', getBuyerDisputes); // Buyer get all disputes (buyer/farmer only)
+router.get('/dispute/:disputeId', getSellerDisputeById); // Seller get dispute by ID (farmer/supplier only)
+router.get('/dispute/buyer/:disputeId', getBuyerDisputeById); // Buyer get dispute by ID (buyer/farmer only)
 router.put('/dispute/:disputeId/respond', respondToDispute);
 router.put('/dispute/:disputeId/resolve', resolveDispute);
 

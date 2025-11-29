@@ -872,3 +872,279 @@ export const adminRulingOnDispute = async (req, res, next) => {
   }
 };
 
+/**
+ * Get disputes for seller (farmer/supplier)
+ */
+export const getSellerDisputes = async (req, res, next) => {
+  try {
+    const { userId, role } = getUserFromToken(req);
+
+    if (role !== "farmer" && role !== "supplier") {
+      return next(new ErrorHandler("Only sellers can access this endpoint", 403));
+    }
+
+    const { 
+      status, 
+      disputeType,
+      page = 1, 
+      limit = 20 
+    } = req.query;
+
+    const filter = {
+      sellerId: userId,
+      sellerRole: role
+    };
+
+    if (status) filter.status = status;
+    if (disputeType) filter.disputeType = disputeType;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const disputes = await Dispute.find(filter)
+      .populate("buyerId", "name email phone")
+      .populate("orderId")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    // Manually populate orderId from both Order and OrderMultiVendor models
+    const disputesWithOrders = await Promise.all(
+      disputes.map(async (dispute) => {
+        if (dispute.orderId) {
+          // Try OrderMultiVendor first (new model)
+          let order = await OrderMultiVendor.findById(dispute.orderId)
+            .populate("customerId", "name email phone")
+            .populate("products.productId", "name price images")
+            .populate("products.farmerId", "name email")
+            .populate("products.supplierId", "name email")
+            .lean();
+          
+          // If not found, try old Order model
+          if (!order) {
+            order = await Order.findById(dispute.orderId)
+              .populate("userId", "name email phone")
+              .populate("products.productId", "name price images")
+              .lean();
+          }
+          
+          dispute.orderId = order || dispute.orderId;
+        }
+        return dispute;
+      })
+    );
+
+    const total = await Dispute.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: disputesWithOrders.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      disputes: disputesWithOrders
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get dispute by ID for seller
+ */
+export const getSellerDisputeById = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+    const { userId, role } = getUserFromToken(req);
+
+    if (role !== "farmer" && role !== "supplier") {
+      return next(new ErrorHandler("Only sellers can access this endpoint", 403));
+    }
+
+    // Validate disputeId is a valid ObjectId
+    if (!disputeId || !disputeId.match(/^[0-9a-fA-F]{24}$/)) {
+      return next(new ErrorHandler("Invalid dispute ID format", 400));
+    }
+
+    const dispute = await Dispute.findOne({
+      _id: disputeId,
+      sellerId: userId,
+      sellerRole: role
+    })
+      .populate("buyerId", "name email phone address")
+      .populate("orderId")
+      .lean();
+
+    if (!dispute) {
+      return next(new ErrorHandler("Dispute not found or access denied", 404));
+    }
+
+    // Populate orderId from both models
+    if (dispute.orderId) {
+      const orderId = dispute.orderId._id || dispute.orderId;
+      
+      // Try OrderMultiVendor first (new model)
+      let order = await OrderMultiVendor.findById(orderId)
+        .populate("customerId", "name email phone address")
+        .populate("products.productId", "name price images")
+        .populate("products.farmerId", "name email phone")
+        .populate("products.supplierId", "name email phone")
+        .lean();
+      
+      // If not found, try old Order model
+      if (!order) {
+        order = await Order.findById(orderId)
+          .populate("userId", "name email phone address")
+          .populate("products.productId", "name price images")
+          .lean();
+      }
+      
+      dispute.orderId = order || dispute.orderId;
+    }
+
+    res.status(200).json({
+      success: true,
+      dispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get disputes for buyer
+ */
+export const getBuyerDisputes = async (req, res, next) => {
+  try {
+    const { userId, role } = getUserFromToken(req);
+
+    if (role !== "buyer" && role !== "farmer") {
+      return next(new ErrorHandler("Only buyers can access this endpoint", 403));
+    }
+
+    const { 
+      status, 
+      disputeType,
+      page = 1, 
+      limit = 20 
+    } = req.query;
+
+    const filter = {
+      buyerId: userId
+    };
+
+    if (status) filter.status = status;
+    if (disputeType) filter.disputeType = disputeType;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const disputes = await Dispute.find(filter)
+      .populate("sellerId", "name email phone")
+      .populate("orderId")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    // Manually populate orderId from both Order and OrderMultiVendor models
+    const disputesWithOrders = await Promise.all(
+      disputes.map(async (dispute) => {
+        if (dispute.orderId) {
+          // Try OrderMultiVendor first (new model)
+          let order = await OrderMultiVendor.findById(dispute.orderId)
+            .populate("customerId", "name email phone")
+            .populate("products.productId", "name price images")
+            .populate("products.farmerId", "name email")
+            .populate("products.supplierId", "name email")
+            .lean();
+          
+          // If not found, try old Order model
+          if (!order) {
+            order = await Order.findById(dispute.orderId)
+              .populate("userId", "name email phone")
+              .populate("products.productId", "name price images")
+              .lean();
+          }
+          
+          dispute.orderId = order || dispute.orderId;
+        }
+        return dispute;
+      })
+    );
+
+    const total = await Dispute.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: disputesWithOrders.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      disputes: disputesWithOrders
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get dispute by ID for buyer
+ */
+export const getBuyerDisputeById = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+    const { userId, role } = getUserFromToken(req);
+
+    if (role !== "buyer" && role !== "farmer") {
+      return next(new ErrorHandler("Only buyers can access this endpoint", 403));
+    }
+
+    // Validate disputeId is a valid ObjectId
+    if (!disputeId || !disputeId.match(/^[0-9a-fA-F]{24}$/)) {
+      return next(new ErrorHandler("Invalid dispute ID format", 400));
+    }
+
+    const dispute = await Dispute.findOne({
+      _id: disputeId,
+      buyerId: userId
+    })
+      .populate("sellerId", "name email phone address")
+      .populate("orderId")
+      .lean();
+
+    if (!dispute) {
+      return next(new ErrorHandler("Dispute not found or access denied", 404));
+    }
+
+    // Populate orderId from both models
+    if (dispute.orderId) {
+      const orderId = dispute.orderId._id || dispute.orderId;
+      
+      // Try OrderMultiVendor first (new model)
+      let order = await OrderMultiVendor.findById(orderId)
+        .populate("customerId", "name email phone address")
+        .populate("products.productId", "name price images")
+        .populate("products.farmerId", "name email phone")
+        .populate("products.supplierId", "name email phone")
+        .lean();
+      
+      // If not found, try old Order model
+      if (!order) {
+        order = await Order.findById(orderId)
+          .populate("userId", "name email phone address")
+          .populate("products.productId", "name price images")
+          .lean();
+      }
+      
+      dispute.orderId = order || dispute.orderId;
+    }
+
+    res.status(200).json({
+      success: true,
+      dispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
