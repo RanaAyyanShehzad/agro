@@ -20,12 +20,12 @@ export const startDisputeAutoEscalation = () => {
 
       // Get configuration
       const config = await SystemConfig.findOne({ 
-        configKey: CONFIG_KEYS.DISPUTE_RESPONSE_HOURS 
+        configKey: CONFIG_KEYS.DISPUTE_RESPONSE_MINUTES 
       });
-      const responseHours = config?.configValue || 24; // Default 24 hours
+      const responseMinutes = config?.configValue || 10; // Default 10 minutes
 
       const cutoffTime = new Date();
-      cutoffTime.setHours(cutoffTime.getHours() - responseHours);
+      cutoffTime.setMinutes(cutoffTime.getMinutes() - responseMinutes);
 
       let escalatedCount = 0;
 
@@ -77,7 +77,7 @@ export const startDisputeAutoEscalation = () => {
                   `Seller ID: ${dispute.sellerId}\n` +
                   `Dispute Type: ${dispute.disputeType}\n` +
                   `Reason: ${dispute.reason}\n\n` +
-                  `The seller did not respond within ${responseHours} hours.\n\n` +
+                  `The seller did not respond within ${responseMinutes} minutes.\n\n` +
                   `Please review and make a ruling.`
                 );
 
@@ -87,7 +87,7 @@ export const startDisputeAutoEscalation = () => {
                   "admin",
                   "dispute_escalated",
                   "Dispute Escalated - Review Required",
-                  `Dispute #${dispute._id} has been escalated. Seller did not respond within ${responseHours} hours.`,
+                  `Dispute #${dispute._id} has been escalated. Seller did not respond within ${responseMinutes} minutes.`,
                   {
                     relatedId: dispute._id,
                     relatedType: "dispute",
@@ -109,7 +109,7 @@ export const startDisputeAutoEscalation = () => {
               "buyer",
               "dispute_escalated",
               "Dispute Escalated to Admin",
-              `Your dispute #${dispute._id} has been escalated to admin review because the seller did not respond within ${responseHours} hours.`,
+              `Your dispute #${dispute._id} has been escalated to admin review because the seller did not respond within ${responseMinutes} minutes.`,
               {
                 relatedId: dispute._id,
                 relatedType: "dispute",

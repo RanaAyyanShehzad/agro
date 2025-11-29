@@ -1269,7 +1269,7 @@ export const getDisputeById = async (req, res, next) => {
 export const suspendUser = async (req, res, next) => {
   try {
     const { userId, role } = req.params;
-    const { duration, reason } = req.body; // duration in days
+    const { duration, reason } = req.body; // duration in minutes
     const adminId = req.adminId;
     const adminName = req.user?.name || "Admin";
 
@@ -1278,7 +1278,7 @@ export const suspendUser = async (req, res, next) => {
     }
 
     if (!duration || duration <= 0) {
-      return next(new ErrorHandler("Suspension duration (in days) is required", 400));
+      return next(new ErrorHandler("Suspension duration (in minutes) is required", 400));
     }
 
     let UserModel;
@@ -1292,7 +1292,7 @@ export const suspendUser = async (req, res, next) => {
     }
 
     const suspendedUntil = new Date();
-    suspendedUntil.setDate(suspendedUntil.getDate() + parseInt(duration));
+    suspendedUntil.setMinutes(suspendedUntil.getMinutes() + parseInt(duration));
 
     user.isSuspended = true;
     user.suspendedUntil = suspendedUntil;
@@ -1320,13 +1320,13 @@ export const suspendUser = async (req, res, next) => {
       role,
       "account_suspended",
       "Account Suspended",
-      `Your account has been suspended until ${suspendedUntil.toLocaleDateString()}. Reason: ${user.suspensionReason}`,
+      `Your account has been suspended until ${suspendedUntil.toLocaleString()}. Reason: ${user.suspensionReason}`,
       { priority: "high", sendEmail: true }
     );
 
     res.status(200).json({
       success: true,
-      message: `User suspended until ${suspendedUntil.toLocaleDateString()}`,
+      message: `User suspended until ${suspendedUntil.toLocaleString()}`,
       user: {
         _id: user._id,
         name: user.name,
@@ -1441,17 +1441,35 @@ export const resetUserPassword = async (req, res, next) => {
     }
 
     let newPassword;
-    if (generateTemporary) {
-      // Generate temporary password
-      newPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + "123";
-    } else {
-      // Admin provides new password
-      const { newPassword: providedPassword } = req.body;
-      if (!providedPassword) {
-        return next(new ErrorHandler("New password is required", 400));
-      }
+    const { newPassword: providedPassword } = req.body;
+    
+    if (providedPassword) {
+      // Admin provided password - validate it
       if (!validatePassword(providedPassword, next)) return;
       newPassword = providedPassword;
+    } else {
+      // No password provided - generate temporary password
+      // Generate password matching system pattern: 8+ chars, uppercase, lowercase, number, special char
+      const lowercase = "abcdefghijklmnopqrstuvwxyz";
+      const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const numbers = "0123456789";
+      const special = "!@#$%^&*()_+-=[]{}|;:',.<>?/~";
+      
+      // Generate random password
+      let tempPassword = "";
+      tempPassword += lowercase[Math.floor(Math.random() * lowercase.length)];
+      tempPassword += uppercase[Math.floor(Math.random() * uppercase.length)];
+      tempPassword += numbers[Math.floor(Math.random() * numbers.length)];
+      tempPassword += special[Math.floor(Math.random() * special.length)];
+      
+      // Fill remaining length (minimum 8 chars)
+      const allChars = lowercase + uppercase + numbers + special;
+      for (let i = tempPassword.length; i < 12; i++) {
+        tempPassword += allChars[Math.floor(Math.random() * allChars.length)];
+      }
+      
+      // Shuffle the password
+      newPassword = tempPassword.split('').sort(() => Math.random() - 0.5).join('');
     }
 
     user.password = await hashPassword(newPassword);
@@ -1475,14 +1493,14 @@ export const resetUserPassword = async (req, res, next) => {
       await sendEmail(
         user.email,
         "Password Reset by Admin",
-        `Dear ${user.name},\n\nYour password has been reset by an administrator.\n\n${generateTemporary ? `Your temporary password is: ${newPassword}\n\nPlease change this password after logging in.` : "Please use your new password to login."}\n\nThank you!`
+        `Dear ${user.name},\n\nYour password has been reset by an administrator.\n\n${!providedPassword ? `Your temporary password is: ${newPassword}\n\nPlease change this password after logging in.` : "Please use your new password to login."}\n\nThank you!`
       );
     }
 
     res.status(200).json({
       success: true,
       message: "Password reset successfully",
-      ...(generateTemporary && { temporaryPassword: newPassword })
+      ...(!providedPassword && { temporaryPassword: newPassword })
     });
   } catch (error) {
     next(error);

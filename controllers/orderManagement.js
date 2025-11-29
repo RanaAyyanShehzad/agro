@@ -513,9 +513,9 @@ export const createDispute = async (req, res, next) => {
 
     // Get dispute response time limit
     const config = await SystemConfig.findOne({ 
-      configKey: CONFIG_KEYS.DISPUTE_RESPONSE_HOURS 
+      configKey: CONFIG_KEYS.DISPUTE_RESPONSE_MINUTES 
     });
-    const responseHours = config?.configValue || 48;
+    const responseMinutes = config?.configValue || 10;
 
     // Send email and notification to seller
     try {
@@ -531,7 +531,7 @@ export const createDispute = async (req, res, next) => {
           await sendEmail(
             seller.email,
             "Dispute Opened - Action Required",
-            `Dear ${seller.name},\n\nA dispute has been opened for order #${orderId}.\n\nReason: ${reason}\n\nPlease respond with your evidence and proposal within ${responseHours} hours. If you don't respond, the dispute will be automatically escalated to admin.\n\nThank you!`
+            `Dear ${seller.name},\n\nA dispute has been opened for order #${orderId}.\n\nReason: ${reason}\n\nPlease respond with your evidence and proposal within ${responseMinutes} minutes. If you don't respond, the dispute will be automatically escalated to admin.\n\nThank you!`
           );
         }
 
@@ -541,7 +541,7 @@ export const createDispute = async (req, res, next) => {
           sellerRole,
           "dispute_opened",
           "Dispute Opened - Action Required",
-          `A dispute has been opened for order #${orderId}. Please respond within ${responseHours} hours.`,
+          `A dispute has been opened for order #${orderId}. Please respond within ${responseMinutes} minutes.`,
           {
             relatedId: dispute._id,
             relatedType: "dispute",
@@ -602,11 +602,11 @@ export const respondToDispute = async (req, res, next) => {
 
     // Check if dispute is within response time limit
     const config = await SystemConfig.findOne({ 
-      configKey: CONFIG_KEYS.DISPUTE_RESPONSE_HOURS 
+      configKey: CONFIG_KEYS.DISPUTE_RESPONSE_MINUTES 
     });
-    const responseHours = config?.configValue || 48; // Default 48 hours
+    const responseMinutes = config?.configValue || 10; // Default 10 minutes
     
-    const disputeAge = (new Date() - dispute.createdAt) / (1000 * 60 * 60); // hours
+    const disputeAge = (new Date() - dispute.createdAt) / (1000 * 60); // minutes
     
     // Update dispute
     dispute.sellerResponse = {
