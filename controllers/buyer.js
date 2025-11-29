@@ -138,6 +138,23 @@ export const Login = async (req, res, next) => {
     if (!user.verified) {
       return next(new ErrorHandler("Please verify your account first", 403));
     }
+    if (user.isAccountDeleted) {
+      return next(new ErrorHandler("Account has been deleted", 403));
+    }
+    if (!user.isActive) {
+      return next(new ErrorHandler("Account has been deactivated. Please contact support.", 403));
+    }
+    if (user.isSuspended) {
+      if (user.suspendedUntil && user.suspendedUntil > new Date()) {
+        return next(new ErrorHandler(`Account is suspended until ${user.suspendedUntil.toLocaleString()}. Reason: ${user.suspensionReason || "Policy violation"}`, 403));
+      } else {
+        // Suspension expired, auto-unsuspend
+        user.isSuspended = false;
+        user.suspendedUntil = null;
+        user.isActive = true;
+        await user.save();
+      }
+    }
     if (isAccountLocked(user)) {
       return next(new ErrorHandler(`Account is temporarily locked. Try again after ${user.lockUntil}.`, 403));
     }

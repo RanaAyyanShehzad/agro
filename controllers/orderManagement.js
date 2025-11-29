@@ -394,10 +394,11 @@ export const createDispute = async (req, res, next) => {
     }
 
     // Check if order is in appropriate status for dispute
+    // Disputes can only be created after order is delivered (not at shipped status)
     const currentStatus = isMultiVendor ? order.orderStatus : order.status;
-    if (!["shipped", "delivered", "received"].includes(currentStatus)) {
+    if (!["delivered", "received"].includes(currentStatus)) {
       return next(new ErrorHandler(
-        `Cannot create dispute. Order must be in "shipped", "delivered", or "received" status. Current status: "${currentStatus}"`,
+        `Cannot create dispute. Order must be in "delivered" or "received" status. Current status: "${currentStatus}"`,
         400
       ));
     }
@@ -578,6 +579,11 @@ export const respondToDispute = async (req, res, next) => {
       return next(new ErrorHandler("Only sellers can respond to disputes", 403));
     }
 
+    // Validate disputeId is a valid ObjectId
+    if (!disputeId || !disputeId.match(/^[0-9a-fA-F]{24}$/)) {
+      return next(new ErrorHandler("Invalid dispute ID format", 400));
+    }
+
     const dispute = await Dispute.findById(disputeId);
     if (!dispute) {
       return next(new ErrorHandler("Dispute not found", 404));
@@ -679,6 +685,11 @@ export const resolveDispute = async (req, res, next) => {
       return next(new ErrorHandler("Only buyers can resolve disputes", 403));
     }
 
+    // Validate disputeId is a valid ObjectId
+    if (!disputeId || !disputeId.match(/^[0-9a-fA-F]{24}$/)) {
+      return next(new ErrorHandler("Invalid dispute ID format", 400));
+    }
+
     const dispute = await Dispute.findById(disputeId);
     if (!dispute) {
       return next(new ErrorHandler("Dispute not found", 404));
@@ -765,6 +776,11 @@ export const adminRulingOnDispute = async (req, res, next) => {
 
     if (!decision || !["buyer_win", "seller_win"].includes(decision)) {
       return next(new ErrorHandler("Decision must be 'buyer_win' or 'seller_win'", 400));
+    }
+
+    // Validate disputeId is a valid ObjectId
+    if (!disputeId || !disputeId.match(/^[0-9a-fA-F]{24}$/)) {
+      return next(new ErrorHandler("Invalid dispute ID format", 400));
     }
 
     const dispute = await Dispute.findById(disputeId);
