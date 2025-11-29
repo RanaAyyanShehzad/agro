@@ -63,7 +63,7 @@ export const acceptOrder = async (req, res, next) => {
       return next(new ErrorHandler("No pending products to accept in this order", 400));
     }
 
-    // Accept all seller's products - set to confirmed first, then processing
+    // Accept all seller's products - set to confirmed first
     for (const productItem of pendingProducts) {
       productItem.sellerAccepted = true;
       productItem.status = "confirmed";
@@ -74,8 +74,9 @@ export const acceptOrder = async (req, res, next) => {
       p.status !== "pending" || p.sellerAccepted === true
     );
 
-    // If all products accepted, move them to processing
+    // Update order status based on product statuses
     if (allProductsAccepted) {
+      // All products accepted - move confirmed products to processing
       order.products.forEach(p => {
         if (p.status === "confirmed") {
           p.status = "processing";
@@ -83,8 +84,8 @@ export const acceptOrder = async (req, res, next) => {
       });
       order.orderStatus = "processing";
     } else {
-      // Some products still pending, keep order status as processing but products are confirmed
-      order.orderStatus = "processing";
+      // Some products still pending - order status is confirmed (some confirmed, some pending)
+      order.orderStatus = "confirmed";
     }
 
     await order.save();

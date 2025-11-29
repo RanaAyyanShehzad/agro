@@ -30,7 +30,8 @@ export const CONFIG_KEYS = {
   FAQ_CONTENT: "FAQ_CONTENT",
   AUTO_CONFIRM_DAYS: "AUTO_CONFIRM_DAYS", // Days after delivery to auto-confirm
   SHIPPED_TO_DELIVERED_MINUTES: "SHIPPED_TO_DELIVERED_MINUTES", // Minutes before seller can mark as delivered
-  DELIVERED_TO_RECEIVED_MINUTES: "DELIVERED_TO_RECEIVED_MINUTES" // Minutes before auto-confirming delivery
+  DELIVERED_TO_RECEIVED_MINUTES: "DELIVERED_TO_RECEIVED_MINUTES", // Minutes before auto-confirming delivery
+  DISPUTE_RESPONSE_HOURS: "DISPUTE_RESPONSE_HOURS" // Hours for seller to respond to dispute before auto-escalation
 };
 
 // Initialize default values if not exists
@@ -40,7 +41,8 @@ systemConfigSchema.statics.initializeDefaults = async function() {
     { configKey: CONFIG_KEYS.MIN_TEMP_CELSIUS, configValue: 2, description: "Minimum temperature threshold for dangerous weather alerts" },
     { configKey: CONFIG_KEYS.AUTO_CONFIRM_DAYS, configValue: 7, description: "Days after delivery to automatically confirm order" },
     { configKey: CONFIG_KEYS.SHIPPED_TO_DELIVERED_MINUTES, configValue: 10, description: "Minutes after shipped status before seller can mark as delivered (for testing)" },
-    { configKey: CONFIG_KEYS.DELIVERED_TO_RECEIVED_MINUTES, configValue: 1440, description: "Minutes after delivered status before auto-confirming (24 hours default)" }
+    { configKey: CONFIG_KEYS.DELIVERED_TO_RECEIVED_MINUTES, configValue: 1440, description: "Minutes after delivered status before auto-confirming (24 hours default)" },
+    { configKey: CONFIG_KEYS.DISPUTE_RESPONSE_HOURS, configValue: 24, description: "Hours for seller to respond to dispute before auto-escalation to admin" }
   ];
 
   for (const defaultConfig of defaults) {

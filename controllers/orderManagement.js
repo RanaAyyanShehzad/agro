@@ -23,6 +23,39 @@ const getUserFromToken = (req) => {
 };
 
 /**
+ * Helper function to populate orderId from both Order and OrderMultiVendor models
+ */
+const populateOrderId = async (dispute) => {
+  if (!dispute || !dispute.orderId) {
+    return dispute;
+  }
+
+  // If orderId is already populated (object), return as is
+  if (typeof dispute.orderId === 'object' && dispute.orderId !== null && !dispute.orderId._id) {
+    return dispute;
+  }
+
+  const orderId = dispute.orderId._id || dispute.orderId;
+
+  // Try OrderMultiVendor first (new model)
+  let order = await OrderMultiVendor.findById(orderId)
+    .populate("customerId", "name email phone")
+    .populate("products.productId", "name price images")
+    .lean();
+  
+  // If not found, try old Order model
+  if (!order) {
+    order = await Order.findById(orderId)
+      .populate("userId", "name email phone")
+      .populate("products.productId", "name price images")
+      .lean();
+  }
+  
+  dispute.orderId = order || dispute.orderId;
+  return dispute;
+};
+
+/**
  * Update order status from shipped to delivered (with time validation)
  */
 export const updateOrderToDelivered = async (req, res, next) => {
@@ -67,6 +100,14 @@ export const updateOrderToDelivered = async (req, res, next) => {
 
     if (!isSeller && role !== "admin") {
       return next(new ErrorHandler("You don't have permission to update this order", 403));
+    }
+
+    // Check if dispute is open - cannot update status if dispute exists
+    if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
+      return next(new ErrorHandler(
+        "Cannot update order status while dispute is open. Please resolve the dispute first.",
+        400
+      ));
     }
 
     // Validate status transition
@@ -354,11 +395,30 @@ export const createDispute = async (req, res, next) => {
 
     // Check if order is in appropriate status for dispute
     const currentStatus = isMultiVendor ? order.orderStatus : order.status;
-    if (!["shipped", "delivered"].includes(currentStatus)) {
+    if (!["shipped", "delivered", "received"].includes(currentStatus)) {
       return next(new ErrorHandler(
-        `Cannot create dispute. Order must be in "shipped" or "delivered" status. Current status: "${currentStatus}"`,
+        `Cannot create dispute. Order must be in "shipped", "delivered", or "received" status. Current status: "${currentStatus}"`,
         400
       ));
+    }
+
+    // For "received" status, check if dispute can still be opened (within time limit)
+    if (currentStatus === "received") {
+      const config = await SystemConfig.findOne({ 
+        configKey: CONFIG_KEYS.DELIVERED_TO_RECEIVED_MINUTES 
+      });
+      const disputeWindowMinutes = config?.configValue || 1440; // Default 24 hours (same as confirmation window)
+      
+      const receivedAt = isMultiVendor ? order.receivedAt : order.receivedAt;
+      if (receivedAt) {
+        const timeSinceReceived = (new Date() - new Date(receivedAt)) / (1000 * 60); // minutes
+        if (timeSinceReceived > disputeWindowMinutes) {
+          return next(new ErrorHandler(
+            `Cannot create dispute. Order was confirmed more than ${disputeWindowMinutes} minutes ago. Please contact support.`,
+            400
+          ));
+        }
+      }
     }
 
     // Check if order was delivered and enough time has passed (for non-delivery disputes)
@@ -559,6 +619,9 @@ export const respondToDispute = async (req, res, next) => {
     // Otherwise, it should already be escalated (handled by cron job)
     await dispute.save();
 
+    // Populate orderId for response
+    await populateOrderId(dispute);
+
     // Send email and notification to buyer
     try {
       const buyerUser = await buyer.findById(dispute.buyerId) || 
@@ -616,10 +679,13 @@ export const resolveDispute = async (req, res, next) => {
       return next(new ErrorHandler("Only buyers can resolve disputes", 403));
     }
 
-    const dispute = await Dispute.findById(disputeId).populate("orderId");
+    const dispute = await Dispute.findById(disputeId);
     if (!dispute) {
       return next(new ErrorHandler("Dispute not found", 404));
     }
+
+    // Populate orderId from both models
+    await populateOrderId(dispute);
 
     // Verify buyer owns this dispute
     if (dispute.buyerId.toString() !== userId) {
@@ -634,14 +700,20 @@ export const resolveDispute = async (req, res, next) => {
       return next(new ErrorHandler("Seller has not responded yet", 400));
     }
 
+    // Get orderId (could be ObjectId or populated object)
+    const orderId = dispute.orderId?._id || dispute.orderId;
+
     if (action === "accept") {
       // Buyer accepts proposal - close dispute, complete payment
       dispute.status = "closed";
       dispute.buyerAccepted = true;
       dispute.resolvedAt = new Date();
 
-      // Update order
-      const order = dispute.orderId;
+      // Update order - try both models
+      let order = await OrderMultiVendor.findById(orderId);
+      if (!order) {
+        order = await Order.findById(orderId);
+      }
       if (order) {
         order.dispute_status = "closed";
         order.payment_status = "complete";
@@ -654,8 +726,11 @@ export const resolveDispute = async (req, res, next) => {
       // Buyer rejects - escalate to admin
       dispute.status = "pending_admin_review";
       
-      // Update order
-      const order = dispute.orderId;
+      // Update order - try both models
+      let order = await OrderMultiVendor.findById(orderId);
+      if (!order) {
+        order = await Order.findById(orderId);
+      }
       if (order) {
         order.dispute_status = "pending_admin_review";
         await order.save();
@@ -665,6 +740,9 @@ export const resolveDispute = async (req, res, next) => {
     }
 
     await dispute.save();
+
+    // Populate orderId for response
+    await populateOrderId(dispute);
 
     res.status(200).json({
       success: true,
@@ -689,7 +767,7 @@ export const adminRulingOnDispute = async (req, res, next) => {
       return next(new ErrorHandler("Decision must be 'buyer_win' or 'seller_win'", 400));
     }
 
-    const dispute = await Dispute.findById(disputeId).populate("orderId");
+    const dispute = await Dispute.findById(disputeId);
     if (!dispute) {
       return next(new ErrorHandler("Dispute not found", 404));
     }
@@ -697,6 +775,9 @@ export const adminRulingOnDispute = async (req, res, next) => {
     if (dispute.status !== "pending_admin_review") {
       return next(new ErrorHandler("Dispute is not pending admin review", 400));
     }
+
+    // Get orderId (could be ObjectId or populated object)
+    const orderId = dispute.orderId?._id || dispute.orderId;
 
     // Update dispute
     dispute.status = "closed";
@@ -709,8 +790,11 @@ export const adminRulingOnDispute = async (req, res, next) => {
     dispute.resolvedAt = new Date();
     await dispute.save();
 
-    // Update order payment status based on ruling
-    const order = dispute.orderId;
+    // Update order payment status based on ruling - try both models
+    let order = await OrderMultiVendor.findById(orderId);
+    if (!order) {
+      order = await Order.findById(orderId);
+    }
     if (order) {
       order.dispute_status = "closed";
       
@@ -728,6 +812,9 @@ export const adminRulingOnDispute = async (req, res, next) => {
       
       await order.save();
     }
+
+    // Populate orderId for response
+    await populateOrderId(dispute);
 
     // Send emails to both parties
     try {

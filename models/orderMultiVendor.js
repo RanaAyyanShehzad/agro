@@ -81,6 +81,7 @@ const orderSchema = new mongoose.Schema({
   orderStatus: {
     type: String,
     enum: [
+      "pending",
       "processing",
       "confirmed",
       "shipped",
@@ -92,7 +93,7 @@ const orderSchema = new mongoose.Schema({
       "partially_received",
       "partially_cancelled"
     ],
-    default: "processing"
+    default: "pending"
   },
   // Expected delivery date (set when order is shipped)
   expected_delivery_date: {

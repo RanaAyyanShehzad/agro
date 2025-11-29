@@ -1165,7 +1165,6 @@ export const getAllDisputes = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const disputes = await Dispute.find(filter)
-      .populate("orderId")
       .populate("buyerId", "name email phone")
       .populate("sellerId", "name email phone")
       .populate("adminRuling.adminId", "name email")
@@ -1174,15 +1173,39 @@ export const getAllDisputes = async (req, res, next) => {
       .limit(parseInt(limit))
       .lean();
 
+    // Manually populate orderId from both Order and OrderMultiVendor models
+    const disputesWithOrders = await Promise.all(
+      disputes.map(async (dispute) => {
+        if (dispute.orderId) {
+          // Try OrderMultiVendor first (new model)
+          let order = await OrderMultiVendor.findById(dispute.orderId)
+            .populate("customerId", "name email phone")
+            .populate("products.productId", "name price images")
+            .lean();
+          
+          // If not found, try old Order model
+          if (!order) {
+            order = await Order.findById(dispute.orderId)
+              .populate("userId", "name email phone")
+              .populate("products.productId", "name price images")
+              .lean();
+          }
+          
+          dispute.orderId = order || dispute.orderId;
+        }
+        return dispute;
+      })
+    );
+
     const total = await Dispute.countDocuments(filter);
 
     res.status(200).json({
       success: true,
-      count: disputes.length,
+      count: disputesWithOrders.length,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
-      disputes
+      disputes: disputesWithOrders
     });
   } catch (error) {
     next(error);
@@ -1197,13 +1220,34 @@ export const getDisputeById = async (req, res, next) => {
     const { disputeId } = req.params;
 
     const dispute = await Dispute.findById(disputeId)
-      .populate("orderId")
       .populate("buyerId", "name email phone address")
       .populate("sellerId", "name email phone address")
-      .populate("adminRuling.adminId", "name email");
+      .populate("adminRuling.adminId", "name email")
+      .lean();
 
     if (!dispute) {
       return next(new ErrorHandler("Dispute not found", 404));
+    }
+
+    // Manually populate orderId from both Order and OrderMultiVendor models
+    if (dispute.orderId) {
+      // Try OrderMultiVendor first (new model)
+      let order = await OrderMultiVendor.findById(dispute.orderId)
+        .populate("customerId", "name email phone address")
+        .populate("products.productId", "name price images")
+        .populate("products.farmerId", "name email phone")
+        .populate("products.supplierId", "name email phone")
+        .lean();
+      
+      // If not found, try old Order model
+      if (!order) {
+        order = await Order.findById(dispute.orderId)
+          .populate("userId", "name email phone address")
+          .populate("products.productId", "name price images")
+          .lean();
+      }
+      
+      dispute.orderId = order || dispute.orderId;
     }
 
     res.status(200).json({

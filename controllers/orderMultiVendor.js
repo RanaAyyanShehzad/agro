@@ -7,6 +7,7 @@ import { logOrderChange } from "../utils/orderHistoryLogger.js";
 import { buyer } from "../models/buyer.js";
 import { farmer } from "../models/farmer.js";
 import { product } from "../models/products.js";
+import { SystemConfig, CONFIG_KEYS } from "../models/systemConfig.js";
 
 /**
  * Update product status in an order
@@ -18,10 +19,62 @@ export const updateProductStatus = async (req, res, next) => {
     const order = req.order;
     const productItem = req.productItem;
 
+    // Check if dispute is open - cannot update status if dispute exists
+    if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
+      return next(new ErrorHandler(
+        "Cannot update order status while dispute is open. Please resolve the dispute first.",
+        400
+      ));
+    }
+
     // Validate status
     const validStatuses = ["processing", "confirmed", "shipped", "delivered", "cancelled"];
     if (!status || !validStatuses.includes(status)) {
       return next(new ErrorHandler(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400));
+    }
+
+    // Validate status transitions
+    const currentProductStatus = productItem.status;
+    if (status === "delivered" && currentProductStatus !== "shipped") {
+      return next(new ErrorHandler(
+        `Cannot mark as delivered. Product must be in "shipped" status. Current status: "${currentProductStatus}"`,
+        400
+      ));
+    }
+
+    // Time validation: Cannot mark as "delivered" immediately after "shipped"
+    if (status === "delivered") {
+      if (currentProductStatus !== "shipped") {
+        return next(new ErrorHandler(
+          `Cannot mark as delivered. Product must be in "shipped" status first.`,
+          400
+        ));
+      }
+
+      // Check if product was shipped
+      if (!productItem.shippedAt) {
+        return next(new ErrorHandler(
+          "Product shipped timestamp not found. Cannot mark as delivered.",
+          400
+        ));
+      }
+
+      // Get configuration for minimum time
+      const config = await SystemConfig.findOne({ 
+        configKey: CONFIG_KEYS.SHIPPED_TO_DELIVERED_MINUTES 
+      });
+      const minMinutes = config?.configValue || 10; // Default 10 minutes
+
+      const now = new Date();
+      const timeDiff = (now - new Date(productItem.shippedAt)) / (1000 * 60); // minutes
+
+      if (timeDiff < minMinutes) {
+        const remainingMinutes = Math.ceil(minMinutes - timeDiff);
+        return next(new ErrorHandler(
+          `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after shipping.`,
+          400
+        ));
+      }
     }
 
     // Update product status

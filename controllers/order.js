@@ -84,7 +84,7 @@ export const createOrder = async (req, res, next) => {
     };
 
     // Set initial order status - products are pending seller acceptance
-    orderData.orderStatus = "processing"; // Order is processing, but products are pending
+    orderData.orderStatus = "pending"; // Order is pending until seller accepts
 
     let savedOrder = null;
     let cartDeleted = false;
