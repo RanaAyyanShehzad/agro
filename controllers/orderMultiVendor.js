@@ -28,16 +28,62 @@ export const updateProductStatus = async (req, res, next) => {
     }
 
     // Validate status
-    const validStatuses = ["processing", "confirmed", "shipped", "delivered", "cancelled"];
+    const validStatuses = ["processing", "shipped", "delivered", "cancelled"];
     if (!status || !validStatuses.includes(status)) {
       return next(new ErrorHandler(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400));
     }
 
-    // Validate status transitions
+    // Validate status transitions - enforce proper flow: confirmed → processing → shipped → delivered
     const currentProductStatus = productItem.status;
+    
+    // Define allowed transitions
+    const allowedTransitions = {
+      "pending": ["cancelled"], // Can only cancel from pending
+      "confirmed": ["processing", "cancelled"], // Can go to processing or cancel
+      "processing": ["shipped", "cancelled"], // Can go to shipped or cancel
+      "shipped": ["delivered"], // Can only go to delivered
+      "delivered": [], // Cannot change from delivered (buyer must confirm)
+      "received": [], // Cannot change from received
+      "rejected": [], // Cannot change from rejected
+      "cancelled": [] // Cannot change from cancelled
+    };
+
+    // Check if transition is allowed
+    const allowedNextStatuses = allowedTransitions[currentProductStatus] || [];
+    if (!allowedNextStatuses.includes(status)) {
+      return next(new ErrorHandler(
+        `Cannot change status from "${currentProductStatus}" to "${status}". ` +
+        `Allowed transitions: ${allowedNextStatuses.length > 0 ? allowedNextStatuses.join(", ") : "none"}`,
+        400
+      ));
+    }
+
+    // Prevent status reversals - once delivered, cannot go back
+    if (currentProductStatus === "delivered" || currentProductStatus === "received") {
+      return next(new ErrorHandler(
+        `Cannot change status. Order is already ${currentProductStatus}. Status cannot be reversed.`,
+        400
+      ));
+    }
+
+    // Specific validations for each transition
+    if (status === "processing" && currentProductStatus !== "confirmed") {
+      return next(new ErrorHandler(
+        `Cannot change to processing. Product must be in "confirmed" status. Current status: "${currentProductStatus}"`,
+        400
+      ));
+    }
+
+    if (status === "shipped" && currentProductStatus !== "processing") {
+      return next(new ErrorHandler(
+        `Cannot change to shipped. Product must be in "processing" status. Current status: "${currentProductStatus}"`,
+        400
+      ));
+    }
+
     if (status === "delivered" && currentProductStatus !== "shipped") {
       return next(new ErrorHandler(
-        `Cannot mark as delivered. Product must be in "shipped" status. Current status: "${currentProductStatus}"`,
+        `Cannot change to delivered. Product must be in "shipped" status. Current status: "${currentProductStatus}"`,
         400
       ));
     }
@@ -83,11 +129,15 @@ export const updateProductStatus = async (req, res, next) => {
     // Handle shipped status - set timestamps
     if (status === 'shipped') {
       productItem.shippedAt = new Date();
-      // Set expected delivery date at order level if not set
+      // Use estimated delivery date from product if available, otherwise set default
       if (!order.expected_delivery_date) {
-        const expectedDate = new Date();
-        expectedDate.setDate(expectedDate.getDate() + 7);
-        order.expected_delivery_date = expectedDate;
+        if (productItem.estimatedDeliveryDate) {
+          order.expected_delivery_date = productItem.estimatedDeliveryDate;
+        } else {
+          const expectedDate = new Date();
+          expectedDate.setDate(expectedDate.getDate() + 7);
+          order.expected_delivery_date = expectedDate;
+        }
       }
     }
     

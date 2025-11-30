@@ -45,6 +45,10 @@ const productItemSchema = new mongoose.Schema({
     type: String,
     maxlength: 500
   },
+  // Estimated delivery date (set when seller accepts order)
+  estimatedDeliveryDate: {
+    type: Date
+  },
   // Per-product timestamps (for multi-vendor orders)
   shippedAt: {
     type: Date

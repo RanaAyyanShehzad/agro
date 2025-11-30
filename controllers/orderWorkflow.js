@@ -23,14 +23,30 @@ const getUserFromToken = (req) => {
 
 /**
  * Seller accepts order
+ * Required: estimatedDeliveryDate (Date) in request body
  */
 export const acceptOrder = async (req, res, next) => {
   try {
     const { orderId } = req.params;
+    const { estimatedDeliveryDate } = req.body;
     const { userId, role } = getUserFromToken(req);
 
     if (role !== "farmer" && role !== "supplier") {
       return next(new ErrorHandler("Only sellers can accept orders", 403));
+    }
+
+    // Validate estimated delivery date
+    if (!estimatedDeliveryDate) {
+      return next(new ErrorHandler("Estimated delivery date is required when accepting order", 400));
+    }
+
+    const estimatedDate = new Date(estimatedDeliveryDate);
+    if (isNaN(estimatedDate.getTime())) {
+      return next(new ErrorHandler("Invalid estimated delivery date format", 400));
+    }
+
+    if (estimatedDate <= new Date()) {
+      return next(new ErrorHandler("Estimated delivery date must be in the future", 400));
     }
 
     // Find order
@@ -63,29 +79,31 @@ export const acceptOrder = async (req, res, next) => {
       return next(new ErrorHandler("No pending products to accept in this order", 400));
     }
 
-    // Accept all seller's products - set to confirmed first
+    // Accept all seller's products - set to confirmed (NOT processing yet)
     for (const productItem of pendingProducts) {
       productItem.sellerAccepted = true;
       productItem.status = "confirmed";
+      productItem.estimatedDeliveryDate = estimatedDate;
     }
 
-    // Check if all products in order are accepted
+    // Update order status to confirmed (not processing yet)
+    // Order status will be "confirmed" when seller accepts
+    // Seller can then manually change to "processing" later
     const allProductsAccepted = order.products.every(p => 
       p.status !== "pending" || p.sellerAccepted === true
     );
 
-    // Update order status based on product statuses
     if (allProductsAccepted) {
-      // All products accepted - move confirmed products to processing
-      order.products.forEach(p => {
-        if (p.status === "confirmed") {
-          p.status = "processing";
-        }
-      });
-      order.orderStatus = "processing";
+      // All products accepted - order status is confirmed
+      order.orderStatus = "confirmed";
     } else {
       // Some products still pending - order status is confirmed (some confirmed, some pending)
       order.orderStatus = "confirmed";
+    }
+
+    // Set order-level expected delivery date if not set
+    if (!order.expected_delivery_date) {
+      order.expected_delivery_date = estimatedDate;
     }
 
     await order.save();

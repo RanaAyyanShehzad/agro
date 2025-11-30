@@ -283,6 +283,13 @@ export const confirmOrderReceipt = async (req, res, next) => {
     // Update order status to received and payment to complete
     const now = new Date();
     if (isMultiVendor) {
+      // Update all product statuses to received
+      order.products.forEach(productItem => {
+        if (productItem.status === "delivered") {
+          productItem.status = "received";
+          productItem.receivedAt = now;
+        }
+      });
       order.orderStatus = "received";
       order.receivedAt = now;
       order.payment_status = "complete";
@@ -395,6 +402,8 @@ export const createDispute = async (req, res, next) => {
 
     // Check if order is in appropriate status for dispute
     const currentStatus = isMultiVendor ? order.orderStatus : order.status;
+    
+    // Dispute can be created at: shipped (if past estimated time), delivered, or received (within time window)
     if (!["shipped", "delivered", "received"].includes(currentStatus)) {
       return next(new ErrorHandler(
         `Cannot create dispute. Order must be in "shipped", "delivered", or "received" status. Current status: "${currentStatus}"`,
@@ -402,12 +411,45 @@ export const createDispute = async (req, res, next) => {
       ));
     }
 
-    // For "received" status, check if dispute can still be opened (within time limit)
+    // For "shipped" status: can create dispute if estimated delivery time has passed
+    if (currentStatus === "shipped") {
+      const expectedDeliveryDate = isMultiVendor ? order.expected_delivery_date : order.expected_delivery_date;
+      if (expectedDeliveryDate) {
+        const now = new Date();
+        if (now < new Date(expectedDeliveryDate)) {
+          return next(new ErrorHandler(
+            `Cannot create dispute. Estimated delivery date has not passed yet. Expected delivery: ${new Date(expectedDeliveryDate).toLocaleString()}`,
+            400
+          ));
+        }
+      } else {
+        // If no estimated delivery date, allow dispute after a reasonable time (e.g., 7 days)
+        const shippedAt = isMultiVendor ? order.shippedAt : order.shippedAt;
+        if (shippedAt) {
+          const daysSinceShipped = (new Date() - new Date(shippedAt)) / (1000 * 60 * 60 * 24); // days
+          if (daysSinceShipped < 7) {
+            return next(new ErrorHandler(
+              `Cannot create dispute. Order was shipped less than 7 days ago. Please wait for estimated delivery time.`,
+              400
+            ));
+          }
+        }
+      }
+    }
+
+    // For "delivered" status: can create dispute if buyer didn't receive (non_delivery) or other issues
+    // No time restriction - buyer can dispute immediately if they didn't receive
+    if (currentStatus === "delivered") {
+      // Allow dispute creation - buyer can dispute if they didn't receive the order
+      // or if there are issues with the delivered product
+    }
+
+    // For "received" status: can create dispute within time window after confirmation
     if (currentStatus === "received") {
       const config = await SystemConfig.findOne({ 
         configKey: CONFIG_KEYS.DELIVERED_TO_RECEIVED_MINUTES 
       });
-      const disputeWindowMinutes = config?.configValue || 1440; // Default 24 hours (same as confirmation window)
+      const disputeWindowMinutes = config?.configValue || 1440; // Default 24 hours
       
       const receivedAt = isMultiVendor ? order.receivedAt : order.receivedAt;
       if (receivedAt) {
@@ -415,25 +457,6 @@ export const createDispute = async (req, res, next) => {
         if (timeSinceReceived > disputeWindowMinutes) {
           return next(new ErrorHandler(
             `Cannot create dispute. Order was confirmed more than ${disputeWindowMinutes} minutes ago. Please contact support.`,
-            400
-          ));
-        }
-      }
-    }
-
-    // Check if order was delivered and enough time has passed (for non-delivery disputes)
-    if (currentStatus === "delivered") {
-      const config = await SystemConfig.findOne({ 
-        configKey: CONFIG_KEYS.DELIVERED_TO_RECEIVED_MINUTES 
-      });
-      const confirmMinutes = config?.configValue || 1440; // Default 24 hours
-      
-      const deliveredAt = isMultiVendor ? order.deliveredAt : order.deliveryInfo?.actualDeliveryDate;
-      if (deliveredAt) {
-        const timeSinceDelivery = (new Date() - new Date(deliveredAt)) / (1000 * 60); // minutes
-        if (timeSinceDelivery > confirmMinutes && disputeType === "non_delivery") {
-          return next(new ErrorHandler(
-            `Cannot create non-delivery dispute. Order was delivered more than ${confirmMinutes} minutes ago. Please contact support.`,
             400
           ));
         }
@@ -831,7 +854,10 @@ export const adminRulingOnDispute = async (req, res, next) => {
     // Populate orderId for response
     await populateOrderId(dispute);
 
-    // Send emails to both parties
+    // Get admin details for notifications
+    const adminUser = await admin.findById(adminId);
+
+    // Send notifications and emails to both parties
     try {
       const buyerUser = await buyer.findById(dispute.buyerId) || 
                        await farmer.findById(dispute.buyerId);
@@ -843,23 +869,62 @@ export const adminRulingOnDispute = async (req, res, next) => {
         seller = await supplier.findById(dispute.sellerId);
       }
 
-      if (buyerUser && buyerUser.email) {
-        await sendEmail(
-          buyerUser.email,
+      const decisionText = decision === "buyer_win" ? "Buyer Wins - Refund Approved" : "Seller Wins - Payment Completed";
+      const orderIdStr = dispute.orderId?._id?.toString() || dispute.orderId?.toString() || "N/A";
+
+      // Send notification and email to buyer
+      if (buyerUser) {
+        // In-app notification
+        await createNotification(
+          dispute.buyerId,
+          buyerUser.role || "buyer",
+          "dispute_admin_ruling",
           "Dispute Resolution",
-          `Dear ${buyerUser.name},\n\nThe dispute for order #${dispute.orderId} has been resolved.\n\nDecision: ${decision === "buyer_win" ? "Buyer Wins - Refund Approved" : "Seller Wins - Payment Completed"}\n\n${notes ? `Notes: ${notes}\n\n` : ""}Thank you!`
+          `Your dispute has been resolved. Decision: ${decisionText}${notes ? `\nNotes: ${notes}` : ""}`,
+          {
+            relatedId: dispute._id,
+            relatedType: "dispute",
+            sendEmail: false // We'll send email separately with more details
+          }
         );
+
+        // Email notification
+        if (buyerUser.email) {
+          await sendEmail(
+            buyerUser.email,
+            "Dispute Resolution",
+            `Dear ${buyerUser.name},\n\nThe dispute for order #${orderIdStr} has been resolved.\n\nDecision: ${decisionText}\n\n${notes ? `Notes: ${notes}\n\n` : ""}Thank you!`
+          );
+        }
       }
 
-      if (seller && seller.email) {
-        await sendEmail(
-          seller.email,
+      // Send notification and email to seller
+      if (seller) {
+        // In-app notification
+        await createNotification(
+          dispute.sellerId,
+          dispute.sellerRole,
+          "dispute_admin_ruling",
           "Dispute Resolution",
-          `Dear ${seller.name},\n\nThe dispute for order #${dispute.orderId} has been resolved.\n\nDecision: ${decision === "buyer_win" ? "Buyer Wins - Refund Approved" : "Seller Wins - Payment Completed"}\n\n${notes ? `Notes: ${notes}\n\n` : ""}Thank you!`
+          `Your dispute has been resolved. Decision: ${decisionText}${notes ? `\nNotes: ${notes}` : ""}`,
+          {
+            relatedId: dispute._id,
+            relatedType: "dispute",
+            sendEmail: false // We'll send email separately with more details
+          }
         );
+
+        // Email notification
+        if (seller.email) {
+          await sendEmail(
+            seller.email,
+            "Dispute Resolution",
+            `Dear ${seller.name},\n\nThe dispute for order #${orderIdStr} has been resolved.\n\nDecision: ${decisionText}\n\n${notes ? `Notes: ${notes}\n\n` : ""}Thank you!`
+          );
+        }
       }
     } catch (emailError) {
-      console.error("Failed to send dispute resolution emails:", emailError);
+      console.error("Failed to send dispute resolution notifications:", emailError);
     }
 
     res.status(200).json({

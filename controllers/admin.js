@@ -1871,9 +1871,51 @@ export const getOrderHistory = async (req, res, next) => {
       limit: parseInt(limit)
     });
 
+    // Convert timestamps to Pakistan timezone (PKT = UTC+5)
+    const formatPakistanTime = (date) => {
+      if (!date) return null;
+      const utcDate = new Date(date);
+      // Pakistan is UTC+5, so add 5 hours
+      const pakistanTime = new Date(utcDate.getTime() + (5 * 60 * 60 * 1000));
+      
+      // Format as YYYY-MM-DD HH:mm:ss PKT
+      const year = pakistanTime.getUTCFullYear();
+      const month = String(pakistanTime.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(pakistanTime.getUTCDate()).padStart(2, '0');
+      const hours = String(pakistanTime.getUTCHours()).padStart(2, '0');
+      const minutes = String(pakistanTime.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(pakistanTime.getUTCSeconds()).padStart(2, '0');
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} PKT`;
+    };
+
+    // Format history entries with Pakistan time
+    const formattedHistory = result.history.map(entry => ({
+      _id: entry._id,
+      orderId: entry.orderId,
+      orderType: entry.orderType,
+      changedBy: {
+        userId: entry.changedBy.userId,
+        role: entry.changedBy.role,
+        name: entry.changedBy.name || "System"
+      },
+      changeType: entry.changeType,
+      oldValue: entry.oldValue,
+      newValue: entry.newValue,
+      reason: entry.reason || null,
+      notes: entry.notes || null,
+      changedAt: formatPakistanTime(entry.createdAt),
+      changedAtISO: entry.createdAt,
+      timestamp: entry.createdAt
+    }));
+
     res.status(200).json({
       success: true,
-      ...result
+      count: formattedHistory.length,
+      total: result.total,
+      page: result.page,
+      totalPages: result.totalPages,
+      history: formattedHistory
     });
   } catch (error) {
     next(error);

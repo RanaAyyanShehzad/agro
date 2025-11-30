@@ -20,7 +20,7 @@ export const isAuthenticated = async (req, res, next) => {
             user = await supplier.findById(decoded._id);
         }else if(role == "admin"){
             user = await admin.findById(decoded._id);
-        }
+        } 
         
         if (!user) {
             return next(new ErrorHandler("User not found", 404));
