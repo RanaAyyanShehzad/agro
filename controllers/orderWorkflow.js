@@ -219,9 +219,24 @@ export const rejectOrder = async (req, res, next) => {
     if (allRejected) {
       // All products rejected, cancel entire order
       order.orderStatus = "cancelled";
-      order.payment_status = "cancelled";
+      
+      // Update payment status based on payment method
       if (order.paymentInfo) {
-        order.paymentInfo.status = "cancelled";
+        const paymentMethod = order.paymentInfo.method;
+        
+        // If cash on delivery: payment was never made, so mark as cancelled
+        // If online payment (easypaisa/jazzcash): payment was made, so mark as refunded
+        if (paymentMethod === "cash-on-delivery") {
+          order.payment_status = "cancelled";
+          order.paymentInfo.status = "cancelled";
+        } else {
+          // easypaisa or jazzcash - payment was made, needs refund
+          order.payment_status = "refunded";
+          order.paymentInfo.status = "refunded";
+        }
+      } else {
+        // Fallback if paymentInfo doesn't exist
+        order.payment_status = "cancelled";
       }
     } else if (hasRejected) {
       // Some products rejected, update order status

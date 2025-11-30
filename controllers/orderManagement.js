@@ -323,17 +323,21 @@ export const confirmOrderReceipt = async (req, res, next) => {
       });
       order.orderStatus = "received";
       order.receivedAt = now;
-      order.payment_status = "complete";
     } else {
       order.status = "received";
       order.receivedAt = now;
-      order.payment_status = "complete";
     }
 
-    // Also update paymentInfo.status for backward compatibility
+    // Update payment status: mark as complete when buyer confirms receipt
+    // For cash-on-delivery: payment is collected on delivery, so mark as complete
+    // For online payment: payment should already be complete, but ensure it's marked
+    order.payment_status = "complete";
     if (order.paymentInfo) {
       order.paymentInfo.status = "completed";
-      order.paymentInfo.paidAt = now;
+      // Set paidAt timestamp if not already set (for cash-on-delivery)
+      if (!order.paymentInfo.paidAt) {
+        order.paymentInfo.paidAt = now;
+      }
     }
 
     await order.save();
