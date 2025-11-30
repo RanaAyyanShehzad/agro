@@ -16,11 +16,11 @@ const router = express.Router();
 router.use(isAuthenticated);
 
 /**
- * PATCH /order/:orderId/product/:productId/status
+ * PUT /order/:orderId/product/:productId/status
  * Update product status in an order
  * Only the farmer/supplier who owns that product can update its status
  */
-router.patch(
+router.put(
   "/order/:orderId/product/:productId/status",
   isProductOwner,
   updateProductStatus
