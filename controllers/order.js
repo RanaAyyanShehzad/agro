@@ -343,6 +343,10 @@ export const getOrderById = async (req, res, next) => {
   }
 };
 
+/**
+ * Comprehensive Order Status Update Endpoint
+ * Handles order status updates with proper validation, transitions, and responses
+ */
 export const updateOrderStatus = async (req, res, next) => {
   try {
     const { orderId } = req.params;
@@ -350,13 +354,22 @@ export const updateOrderStatus = async (req, res, next) => {
     const userRole = getRole(req).role;
     const userId = req.user.id;
 
+    // Validate status is provided
+    if (!status) {
+      return next(new ErrorHandler("Status is required", 400));
+    }
+
     // Try OrderMultiVendor first (new model)
-    let order = await OrderMultiVendor.findById(orderId).populate("products.productId");
+    let order = await OrderMultiVendor.findById(orderId)
+      .populate("products.productId")
+      .populate("customerId", "name email phone address");
     let isMultiVendor = true;
     
     // If not found, try old Order model
     if (!order) {
-      order = await Order.findById(orderId).populate("products.productId");
+      order = await Order.findById(orderId)
+        .populate("products.productId")
+        .populate("userId", "name email phone address");
       isMultiVendor = false;
     }
     
@@ -364,30 +377,123 @@ export const updateOrderStatus = async (req, res, next) => {
       return next(new ErrorHandler("Order not found", 404));
     }
 
-    // Prevent status updates if order is canceled
+    // Get current status
     const currentStatus = isMultiVendor ? order.orderStatus : order.status;
-    if (currentStatus === 'canceled' || currentStatus === 'cancelled') {
-      return next(new ErrorHandler("Cannot update status of a canceled order", 400));
+
+    // Check if dispute is open - cannot update status if dispute exists
+    if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
+      return next(new ErrorHandler(
+        "Cannot update order status while dispute is open. Please resolve the dispute first.",
+        400
+      ));
     }
 
-    // Check if user owns products in this order
-    let isSupplierProduct = false;
-    if (isMultiVendor) {
-      // New model - check farmerId or supplierId
-      isSupplierProduct = order.products.some(p => {
-        if (userRole === 'farmer' && p.farmerId?.toString() === userId) return true;
-        if (userRole === 'supplier' && p.supplierId?.toString() === userId) return true;
-        return false;
-      });
-    } else {
-      // Old model - check product owner
-      isSupplierProduct = order.products.some(p => p.productId?.upLoadedBy?.userID.toString() === userId);
+    // Prevent status updates if order is canceled or received
+    if (currentStatus === 'canceled' || currentStatus === 'cancelled' || currentStatus === 'received') {
+      return next(new ErrorHandler(
+        `Cannot update status of an order that is ${currentStatus}. Status cannot be changed.`,
+        400
+      ));
     }
 
-    if (userRole !== 'admin' && !isSupplierProduct) {
-      return next(new ErrorHandler("You don't have permission to update this order", 403));
+    // Validate status transitions
+    const validStatuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"];
+    if (!validStatuses.includes(status)) {
+      return next(new ErrorHandler(
+        `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        400
+      ));
     }
 
+    // Define allowed transitions
+    const allowedTransitions = {
+      "pending": ["confirmed", "cancelled"],
+      "confirmed": ["processing", "cancelled"],
+      "processing": ["shipped", "cancelled"],
+      "shipped": ["delivered"],
+      "delivered": [], // Cannot change from delivered (buyer must confirm)
+      "received": [], // Cannot change from received
+      "cancelled": [] // Cannot change from cancelled
+    };
+
+    // Check if transition is allowed
+    const allowedNextStatuses = allowedTransitions[currentStatus] || [];
+    if (!allowedNextStatuses.includes(status)) {
+      return next(new ErrorHandler(
+        `Cannot change status from "${currentStatus}" to "${status}". ` +
+        `Allowed transitions: ${allowedNextStatuses.length > 0 ? allowedNextStatuses.join(", ") : "none"}`,
+        400
+      ));
+    }
+
+    // Check authorization - only sellers (farmer/supplier) or admin can update status
+    let isAuthorized = false;
+    if (userRole === 'admin') {
+      isAuthorized = true;
+    } else if (userRole === 'farmer' || userRole === 'supplier') {
+      // Check if user owns products in this order
+      if (isMultiVendor) {
+        isAuthorized = order.products.some(p => {
+          if (userRole === 'farmer' && p.farmerId?.toString() === userId) return true;
+          if (userRole === 'supplier' && p.supplierId?.toString() === userId) return true;
+          return false;
+        });
+      } else {
+        isAuthorized = order.products.some(p => 
+          p.productId?.upLoadedBy?.userID?.toString() === userId
+        );
+      }
+    }
+
+    if (!isAuthorized) {
+      return next(new ErrorHandler(
+        "You don't have permission to update this order status. Only sellers (farmers/suppliers) or admins can update order status.",
+        403
+      ));
+    }
+
+    // Time validation for delivered status
+    if (status === "delivered") {
+      if (currentStatus !== "shipped") {
+        return next(new ErrorHandler(
+          `Cannot mark as delivered. Order must be in "shipped" status. Current status: "${currentStatus}"`,
+          400
+        ));
+      }
+
+      // Check if order was shipped
+      if (!order.shippedAt) {
+        return next(new ErrorHandler(
+          "Order shipped timestamp not found. Cannot mark as delivered.",
+          400
+        ));
+      }
+
+      // Get configuration for minimum time (optional - can be configured)
+      try {
+        const { SystemConfig, CONFIG_KEYS } = await import("../models/systemConfig.js");
+        const config = await SystemConfig.findOne({ 
+          configKey: CONFIG_KEYS.SHIPPED_TO_DELIVERED_MINUTES 
+        });
+        const minMinutes = config?.configValue || 10; // Default 10 minutes
+
+        const now = new Date();
+        const timeDiff = (now - new Date(order.shippedAt)) / (1000 * 60); // minutes
+
+        if (timeDiff < minMinutes) {
+          const remainingMinutes = Math.ceil(minMinutes - timeDiff);
+          return next(new ErrorHandler(
+            `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after shipping.`,
+            400
+          ));
+        }
+      } catch (configError) {
+        // If config not available, allow with warning
+        console.warn("SystemConfig not available, skipping time validation");
+      }
+    }
+
+    // Update order status
     const oldStatus = currentStatus;
     if (isMultiVendor) {
       order.orderStatus = status;
@@ -395,10 +501,10 @@ export const updateOrderStatus = async (req, res, next) => {
       order.status = status;
     }
     
-    // Handle shipped status - set shippedAt and expected_delivery_date
+    // Handle status-specific timestamps and data
+    const now = new Date();
     if (status === 'shipped') {
-      order.shippedAt = new Date();
-      // Set expected delivery date (default: 7 days from now, can be configured)
+      order.shippedAt = now;
       if (!order.expected_delivery_date) {
         const expectedDate = new Date();
         expectedDate.setDate(expectedDate.getDate() + 7);
@@ -407,30 +513,89 @@ export const updateOrderStatus = async (req, res, next) => {
     }
     
     if (status === 'delivered') {
-      order.deliveredAt = new Date();
+      order.deliveredAt = now;
       if (!isMultiVendor && order.deliveryInfo) {
-        order.deliveryInfo.actualDeliveryDate = new Date();
+        order.deliveryInfo.actualDeliveryDate = now;
       }
     }
 
+    // Save order
     await order.save();
 
-    // Send email notification to customer about status update
+    // Log order change (if logging utility exists)
+    try {
+      const { logOrderChange } = await import("../utils/orderHistoryLogger.js");
+      await logOrderChange(
+        order._id,
+        isMultiVendor ? "multivendor" : "old",
+        { userId, role: userRole, name: req.user.name || "" },
+        "status",
+        oldStatus,
+        status,
+        null,
+        `Order status updated from ${oldStatus} to ${status}`
+      );
+    } catch (logError) {
+      console.warn("Failed to log order change:", logError);
+    }
+
+    // Send notification to customer
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      let customerId = null;
+      let customerRole = null;
+      
+      if (isMultiVendor) {
+        customerId = order.customerId?._id || order.customerId;
+        customerRole = order.customerModel?.toLowerCase() || "buyer";
+      } else {
+        customerId = order.userId?._id || order.userId;
+        customerRole = order.userRole || "buyer";
+      }
+
+      if (customerId && (status === "shipped" || status === "delivered")) {
+        await createNotification(
+          customerId,
+          customerRole,
+          status === "shipped" ? "order_shipped" : "order_delivered",
+          status === "shipped" ? "Order Shipped" : "Order Delivered",
+          status === "shipped" 
+            ? `Your order #${orderId} has been shipped and is on its way.`
+            : `Your order #${orderId} has been delivered. Please confirm receipt.`,
+          {
+            relatedId: order._id,
+            relatedType: "order",
+            actionUrl: `/orders/${orderId}`,
+            priority: "medium",
+            sendEmail: true
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send order status notification:", notifError);
+    }
+
+    // Send email notification to customer
     try {
       let customer = null;
-      if (order.userRole === "buyer") {
-        customer = await buyer.findById(order.userId);
-      } else if (order.userRole === "farmer") {
-        customer = await farmer.findById(order.userId);
+      if (isMultiVendor) {
+        customer = order.customerId;
+      } else {
+        if (order.userRole === "buyer") {
+          customer = await buyer.findById(order.userId);
+        } else if (order.userRole === "farmer") {
+          customer = await farmer.findById(order.userId);
+        }
       }
 
       if (customer && customer.email) {
         const statusMessages = {
           pending: "Your order is pending confirmation.",
+          confirmed: "Your order has been confirmed by the seller.",
           processing: "Your order is being processed and prepared for shipment.",
           shipped: "Your order has been shipped and is on its way to you.",
-          delivered: "Your order has been delivered successfully. Thank you for your purchase!",
-          canceled: "Your order has been canceled."
+          delivered: "Your order has been delivered successfully. Please confirm receipt.",
+          cancelled: "Your order has been cancelled."
         };
 
         const statusMessage = statusMessages[status] || `Your order status has been updated to ${status}.`;
@@ -440,11 +605,48 @@ export const updateOrderStatus = async (req, res, next) => {
         await sendEmail(customer.email, emailSubject, emailText);
       }
     } catch (emailError) {
-      // Log email error but don't fail the request
       console.error("Failed to send order status email:", emailError);
     }
 
-    res.status(200).json({ success: true, message: "Order status updated successfully", order });
+    // Populate order for response
+    let populatedOrder;
+    if (isMultiVendor) {
+      populatedOrder = await OrderMultiVendor.findById(order._id)
+        .populate("customerId", "name email phone address")
+        .populate("products.productId")
+        .populate("products.farmerId", "name email")
+        .populate("products.supplierId", "name email")
+        .lean();
+    } else {
+      populatedOrder = await Order.findById(order._id)
+        .populate("userId", "name email phone address")
+        .populate("products.productId")
+        .lean();
+    }
+
+    // Return comprehensive response
+    res.status(200).json({
+      success: true,
+      message: `Order status updated successfully from "${oldStatus}" to "${status}"`,
+      data: {
+        orderId: order._id,
+        previousStatus: oldStatus,
+        currentStatus: status,
+        updatedAt: order.updatedAt,
+        order: populatedOrder
+      },
+      metadata: {
+        statusTransition: {
+          from: oldStatus,
+          to: status,
+          timestamp: new Date().toISOString()
+        },
+        authorizedBy: {
+          userId: userId,
+          role: userRole
+        }
+      }
+    });
   } catch (error) {
     next(error);
   }
