@@ -902,7 +902,6 @@ export const getSellerDisputes = async (req, res, next) => {
 
     const disputes = await Dispute.find(filter)
       .populate("buyerId", "name email phone")
-      .populate("orderId")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
@@ -911,9 +910,12 @@ export const getSellerDisputes = async (req, res, next) => {
     // Manually populate orderId from both Order and OrderMultiVendor models
     const disputesWithOrders = await Promise.all(
       disputes.map(async (dispute) => {
-        if (dispute.orderId) {
+        // Get orderId - could be ObjectId or already populated object
+        const orderId = dispute.orderId?._id || dispute.orderId;
+        
+        if (orderId) {
           // Try OrderMultiVendor first (new model)
-          let order = await OrderMultiVendor.findById(dispute.orderId)
+          let order = await OrderMultiVendor.findById(orderId)
             .populate("customerId", "name email phone")
             .populate("products.productId", "name price images")
             .populate("products.farmerId", "name email")
@@ -922,13 +924,13 @@ export const getSellerDisputes = async (req, res, next) => {
           
           // If not found, try old Order model
           if (!order) {
-            order = await Order.findById(dispute.orderId)
+            order = await Order.findById(orderId)
               .populate("userId", "name email phone")
               .populate("products.productId", "name price images")
               .lean();
           }
           
-          dispute.orderId = order || dispute.orderId;
+          dispute.orderId = order || orderId;
         }
         return dispute;
       })
@@ -972,7 +974,6 @@ export const getSellerDisputeById = async (req, res, next) => {
       sellerRole: role
     })
       .populate("buyerId", "name email phone address")
-      .populate("orderId")
       .lean();
 
     if (!dispute) {
@@ -980,9 +981,10 @@ export const getSellerDisputeById = async (req, res, next) => {
     }
 
     // Populate orderId from both models
-    if (dispute.orderId) {
-      const orderId = dispute.orderId._id || dispute.orderId;
-      
+    // Get orderId - could be ObjectId or already populated object
+    const orderId = dispute.orderId?._id || dispute.orderId;
+    
+    if (orderId) {
       // Try OrderMultiVendor first (new model)
       let order = await OrderMultiVendor.findById(orderId)
         .populate("customerId", "name email phone address")
@@ -999,7 +1001,7 @@ export const getSellerDisputeById = async (req, res, next) => {
           .lean();
       }
       
-      dispute.orderId = order || dispute.orderId;
+      dispute.orderId = order || orderId;
     }
 
     res.status(200).json({
@@ -1040,7 +1042,6 @@ export const getBuyerDisputes = async (req, res, next) => {
 
     const disputes = await Dispute.find(filter)
       .populate("sellerId", "name email phone")
-      .populate("orderId")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
@@ -1049,9 +1050,12 @@ export const getBuyerDisputes = async (req, res, next) => {
     // Manually populate orderId from both Order and OrderMultiVendor models
     const disputesWithOrders = await Promise.all(
       disputes.map(async (dispute) => {
-        if (dispute.orderId) {
+        // Get orderId - could be ObjectId or already populated object
+        const orderId = dispute.orderId?._id || dispute.orderId;
+        
+        if (orderId) {
           // Try OrderMultiVendor first (new model)
-          let order = await OrderMultiVendor.findById(dispute.orderId)
+          let order = await OrderMultiVendor.findById(orderId)
             .populate("customerId", "name email phone")
             .populate("products.productId", "name price images")
             .populate("products.farmerId", "name email")
@@ -1060,13 +1064,13 @@ export const getBuyerDisputes = async (req, res, next) => {
           
           // If not found, try old Order model
           if (!order) {
-            order = await Order.findById(dispute.orderId)
+            order = await Order.findById(orderId)
               .populate("userId", "name email phone")
               .populate("products.productId", "name price images")
               .lean();
           }
           
-          dispute.orderId = order || dispute.orderId;
+          dispute.orderId = order || orderId;
         }
         return dispute;
       })
@@ -1109,7 +1113,6 @@ export const getBuyerDisputeById = async (req, res, next) => {
       buyerId: userId
     })
       .populate("sellerId", "name email phone address")
-      .populate("orderId")
       .lean();
 
     if (!dispute) {
@@ -1117,9 +1120,10 @@ export const getBuyerDisputeById = async (req, res, next) => {
     }
 
     // Populate orderId from both models
-    if (dispute.orderId) {
-      const orderId = dispute.orderId._id || dispute.orderId;
-      
+    // Get orderId - could be ObjectId or already populated object
+    const orderId = dispute.orderId?._id || dispute.orderId;
+    
+    if (orderId) {
       // Try OrderMultiVendor first (new model)
       let order = await OrderMultiVendor.findById(orderId)
         .populate("customerId", "name email phone address")
@@ -1136,7 +1140,7 @@ export const getBuyerDisputeById = async (req, res, next) => {
           .lean();
       }
       
-      dispute.orderId = order || dispute.orderId;
+      dispute.orderId = order || orderId;
     }
 
     res.status(200).json({
