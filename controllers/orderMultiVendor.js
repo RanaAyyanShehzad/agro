@@ -1,4 +1,5 @@
 import { OrderMultiVendor } from "../models/orderMultiVendor.js";
+import { Order } from "../models/order.js";
 import { calculateOrderStatus } from "../utils/orderHelpers.js";
 import ErrorHandler from "../middlewares/error.js";
 import { getRole } from "../middlewares/orderMiddleware.js";
@@ -18,6 +19,7 @@ export const updateProductStatus = async (req, res, next) => {
     const { status } = req.body;
     const order = req.order;
     const productItem = req.productItem;
+    const isMultiVendor = req.isMultiVendor !== false; // Default to true if not set
 
     // Check if dispute is open - cannot update status if dispute exists
     if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
@@ -34,7 +36,8 @@ export const updateProductStatus = async (req, res, next) => {
     }
 
     // Validate status transitions - enforce proper flow: confirmed → processing → shipped → delivered
-    const currentProductStatus = productItem.status;
+    // For old Order model, product status is at order level, not product level
+    const currentProductStatus = isMultiVendor ? (productItem?.status || order.orderStatus) : order.status;
     
     // Define allowed transitions
     const allowedTransitions = {
@@ -97,10 +100,18 @@ export const updateProductStatus = async (req, res, next) => {
         ));
       }
 
-      // Check if product was shipped
-      if (!productItem.shippedAt) {
+      // Check if product was shipped (only for multi-vendor orders)
+      if (isMultiVendor && productItem && !productItem.shippedAt) {
         return next(new ErrorHandler(
           "Product shipped timestamp not found. Cannot mark as delivered.",
+          400
+        ));
+      }
+      
+      // For old Order model, check order-level shippedAt
+      if (!isMultiVendor && !order.shippedAt) {
+        return next(new ErrorHandler(
+          "Order shipped timestamp not found. Cannot mark as delivered.",
           400
         ));
       }
@@ -112,7 +123,10 @@ export const updateProductStatus = async (req, res, next) => {
       const minMinutes = config?.configValue || 10; // Default 10 minutes
 
       const now = new Date();
-      const timeDiff = (now - new Date(productItem.shippedAt)) / (1000 * 60); // minutes
+      const shippedAt = isMultiVendor && productItem?.shippedAt 
+        ? productItem.shippedAt 
+        : order.shippedAt;
+      const timeDiff = (now - new Date(shippedAt)) / (1000 * 60); // minutes
 
       if (timeDiff < minMinutes) {
         const remainingMinutes = Math.ceil(minMinutes - timeDiff);
@@ -124,30 +138,40 @@ export const updateProductStatus = async (req, res, next) => {
     }
 
     // Update product status
-    productItem.status = status;
-    
-    // Handle shipped status - set timestamps
-    if (status === 'shipped') {
-      productItem.shippedAt = new Date();
-      // Use estimated delivery date from product if available, otherwise set default
-      if (!order.expected_delivery_date) {
-        if (productItem.estimatedDeliveryDate) {
-          order.expected_delivery_date = productItem.estimatedDeliveryDate;
-        } else {
-          const expectedDate = new Date();
-          expectedDate.setDate(expectedDate.getDate() + 7);
-          order.expected_delivery_date = expectedDate;
+    if (isMultiVendor && productItem) {
+      productItem.status = status;
+      
+      // Handle shipped status - set timestamps
+      if (status === 'shipped') {
+        productItem.shippedAt = new Date();
+        // Use estimated delivery date from product if available, otherwise set default
+        if (!order.expected_delivery_date) {
+          if (productItem.estimatedDeliveryDate) {
+            order.expected_delivery_date = productItem.estimatedDeliveryDate;
+          } else {
+            const expectedDate = new Date();
+            expectedDate.setDate(expectedDate.getDate() + 7);
+            order.expected_delivery_date = expectedDate;
+          }
         }
       }
+      
+      if (status === 'delivered') {
+        productItem.deliveredAt = new Date();
+      }
     }
-    
-    if (status === 'delivered') {
-      productItem.deliveredAt = new Date();
-    }
+    // For old Order model, status is updated at order level (handled below)
 
-    // Recalculate order status
-    const oldOrderStatus = order.orderStatus;
-    order.orderStatus = calculateOrderStatus(order);
+    // Recalculate order status (only for multi-vendor orders)
+    let oldOrderStatus;
+    if (isMultiVendor) {
+      oldOrderStatus = order.orderStatus;
+      order.orderStatus = calculateOrderStatus(order);
+    } else {
+      oldOrderStatus = order.status;
+      // For old Order model, update status directly
+      order.status = status;
+    }
 
     // Set order-level timestamps
     if (status === 'shipped' && !order.shippedAt) {
@@ -161,19 +185,23 @@ export const updateProductStatus = async (req, res, next) => {
     
     if (status === 'delivered' && !order.deliveredAt) {
       order.deliveredAt = new Date();
+      if (!isMultiVendor && order.deliveryInfo) {
+        order.deliveryInfo.actualDeliveryDate = new Date();
+      }
     }
 
     // Save order
     await order.save();
 
     // Log order change
+    const newOrderStatus = isMultiVendor ? order.orderStatus : order.status;
     await logOrderChange(
       order._id,
-      "multivendor",
+      isMultiVendor ? "multivendor" : "old",
       { userId: req.user?._id || "", role: getRole(req).role, name: req.user?.name || "" },
       status === "shipped" ? "shipped" : status === "delivered" ? "delivered" : "status",
       oldOrderStatus,
-      order.orderStatus,
+      newOrderStatus,
       null,
       `Product status updated to ${status}`
     );
@@ -181,14 +209,28 @@ export const updateProductStatus = async (req, res, next) => {
     // Send notification to customer when order is shipped or delivered
     if (status === "shipped" || status === "delivered") {
       try {
-        const customer = await (order.customerModel === "Buyer" 
-          ? buyer.findById(order.customerId)
-          : farmer.findById(order.customerId));
+        let customer = null;
+        let customerId = null;
+        let customerRole = null;
+        
+        if (isMultiVendor) {
+          customerId = order.customerId;
+          customerRole = order.customerModel.toLowerCase();
+          customer = await (order.customerModel === "Buyer" 
+            ? buyer.findById(order.customerId)
+            : farmer.findById(order.customerId));
+        } else {
+          customerId = order.userId;
+          customerRole = order.userRole;
+          customer = await (order.userRole === "buyer" 
+            ? buyer.findById(order.userId)
+            : farmer.findById(order.userId));
+        }
 
         if (customer) {
           await createNotification(
-            order.customerId,
-            order.customerModel.toLowerCase(),
+            customerId,
+            customerRole,
             status === "shipped" ? "order_shipped" : "order_delivered",
             status === "shipped" ? "Order Shipped" : "Order Delivered",
             status === "shipped" 
@@ -209,12 +251,20 @@ export const updateProductStatus = async (req, res, next) => {
     }
 
     // Populate and return updated order
-    const updatedOrder = await OrderMultiVendor.findById(order._id)
-      .populate("customerId", "name email phone address")
-      .populate("products.productId")
-      .populate("products.farmerId", "name email")
-      .populate("products.supplierId", "name email")
-      .lean();
+    let updatedOrder;
+    if (isMultiVendor) {
+      updatedOrder = await OrderMultiVendor.findById(order._id)
+        .populate("customerId", "name email phone address")
+        .populate("products.productId")
+        .populate("products.farmerId", "name email")
+        .populate("products.supplierId", "name email")
+        .lean();
+    } else {
+      updatedOrder = await Order.findById(order._id)
+        .populate("userId", "name email phone address")
+        .populate("products.productId")
+        .lean();
+    }
 
     res.status(200).json({
       success: true,

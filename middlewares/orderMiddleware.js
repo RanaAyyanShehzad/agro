@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import ErrorHandler from "./error.js";
 import { OrderMultiVendor } from "../models/orderMultiVendor.js";
+import { Order } from "../models/order.js";
 
 /**
  * Get user role from JWT token
@@ -54,35 +55,70 @@ export const isProductOwner = async (req, res, next) => {
       return next(new ErrorHandler("Only farmers or suppliers can update product status", 403));
     }
 
-    const order = await OrderMultiVendor.findById(orderId);
+    // Try OrderMultiVendor first (new model)
+    let order = await OrderMultiVendor.findById(orderId);
+    let isMultiVendor = true;
+    
+    // If not found, try old Order model
+    if (!order) {
+      order = await Order.findById(orderId);
+      isMultiVendor = false;
+    }
+
     if (!order) {
       return next(new ErrorHandler("Order not found", 404));
     }
 
-    const productItem = order.products.find(
-      p => p._id.toString() === productId
-    );
+    // For old Order model, product structure is different
+    let productItem = null;
+    if (isMultiVendor) {
+      productItem = order.products.find(
+        p => p._id.toString() === productId
+      );
+    } else {
+      // Old Order model - products don't have _id, use productId
+      productItem = order.products.find(
+        p => p.productId?.toString() === productId || p._id?.toString() === productId
+      );
+    }
 
     if (!productItem) {
       return next(new ErrorHandler("Product not found in this order", 404));
     }
 
     // Check if user owns this product
-    const isOwner = 
-      (role === "farmer" && productItem.farmerId?.toString() === userId) ||
-      (role === "supplier" && productItem.supplierId?.toString() === userId);
+    let isOwner = false;
+    if (isMultiVendor) {
+      // New model - check farmerId or supplierId
+      isOwner = 
+        (role === "farmer" && productItem.farmerId?.toString() === userId) ||
+        (role === "supplier" && productItem.supplierId?.toString() === userId);
+    } else {
+      // Old model - need to check product owner from product document
+      // For old model, we need to populate productId to check owner
+      if (productItem.productId) {
+        const { product } = await import("../models/products.js");
+        const dbProduct = await product.findById(productItem.productId);
+        if (dbProduct && dbProduct.upLoadedBy) {
+          const { userID, role: productOwnerRole } = dbProduct.upLoadedBy;
+          isOwner = userID.toString() === userId && productOwnerRole === role;
+        }
+      }
+    }
 
     if (!isOwner) {
       return next(new ErrorHandler("You are not authorized to update this product status", 403));
     }
 
     // Check if product is already cancelled
-    if (productItem.status === "cancelled") {
+    const productStatus = isMultiVendor ? productItem.status : order.status;
+    if (productStatus === "cancelled" || productStatus === "canceled") {
       return next(new ErrorHandler("Cannot update status of a cancelled product", 400));
     }
 
     req.order = order;
     req.productItem = productItem;
+    req.isMultiVendor = isMultiVendor;
     next();
   } catch (error) {
     next(error);

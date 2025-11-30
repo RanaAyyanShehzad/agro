@@ -350,35 +350,67 @@ export const updateOrderStatus = async (req, res, next) => {
     const userRole = getRole(req).role;
     const userId = req.user.id;
 
-    let order = await Order.findById(orderId).populate("products.productId");
-    if (!order) return next(new ErrorHandler("Order not found", 404));
+    // Try OrderMultiVendor first (new model)
+    let order = await OrderMultiVendor.findById(orderId).populate("products.productId");
+    let isMultiVendor = true;
+    
+    // If not found, try old Order model
+    if (!order) {
+      order = await Order.findById(orderId).populate("products.productId");
+      isMultiVendor = false;
+    }
+    
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
 
     // Prevent status updates if order is canceled
-    if (order.status === 'canceled') {
+    const currentStatus = isMultiVendor ? order.orderStatus : order.status;
+    if (currentStatus === 'canceled' || currentStatus === 'cancelled') {
       return next(new ErrorHandler("Cannot update status of a canceled order", 400));
     }
 
-    const isSupplierProduct = order.products.some(p => p.productId?.upLoadedBy?.userID.toString() === userId);
+    // Check if user owns products in this order
+    let isSupplierProduct = false;
+    if (isMultiVendor) {
+      // New model - check farmerId or supplierId
+      isSupplierProduct = order.products.some(p => {
+        if (userRole === 'farmer' && p.farmerId?.toString() === userId) return true;
+        if (userRole === 'supplier' && p.supplierId?.toString() === userId) return true;
+        return false;
+      });
+    } else {
+      // Old model - check product owner
+      isSupplierProduct = order.products.some(p => p.productId?.upLoadedBy?.userID.toString() === userId);
+    }
 
     if (userRole !== 'admin' && !isSupplierProduct) {
       return next(new ErrorHandler("You don't have permission to update this order", 403));
     }
 
-    const oldStatus = order.status;
-    order.status = status;
+    const oldStatus = currentStatus;
+    if (isMultiVendor) {
+      order.orderStatus = status;
+    } else {
+      order.status = status;
+    }
     
     // Handle shipped status - set shippedAt and expected_delivery_date
     if (status === 'shipped') {
       order.shippedAt = new Date();
       // Set expected delivery date (default: 7 days from now, can be configured)
-      const expectedDate = new Date();
-      expectedDate.setDate(expectedDate.getDate() + 7);
-      order.expected_delivery_date = expectedDate;
+      if (!order.expected_delivery_date) {
+        const expectedDate = new Date();
+        expectedDate.setDate(expectedDate.getDate() + 7);
+        order.expected_delivery_date = expectedDate;
+      }
     }
     
     if (status === 'delivered') {
-      order.deliveryInfo.actualDeliveryDate = new Date();
       order.deliveredAt = new Date();
+      if (!isMultiVendor && order.deliveryInfo) {
+        order.deliveryInfo.actualDeliveryDate = new Date();
+      }
     }
 
     await order.save();
