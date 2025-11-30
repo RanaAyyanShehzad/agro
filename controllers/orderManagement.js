@@ -25,6 +25,37 @@ const getUserFromToken = (req) => {
 /**
  * Helper function to populate orderId from both Order and OrderMultiVendor models
  */
+/**
+ * Populate buyer and seller information in dispute
+ */
+const populateBuyerSeller = async (dispute) => {
+  try {
+    // Populate buyerId - could be Buyer or Farmer
+    const buyerId = dispute.buyerId?._id || dispute.buyerId;
+    if (buyerId) {
+      let buyerInfo = await buyer.findById(buyerId).select("name email phone").lean();
+      if (!buyerInfo) {
+        buyerInfo = await farmer.findById(buyerId).select("name email phone").lean();
+      }
+      dispute.buyerId = buyerInfo || buyerId;
+    }
+
+    // Populate sellerId - could be Farmer or Supplier (based on sellerRole)
+    const sellerId = dispute.sellerId?._id || dispute.sellerId;
+    if (sellerId) {
+      let sellerInfo = null;
+      if (dispute.sellerRole === "farmer") {
+        sellerInfo = await farmer.findById(sellerId).select("name email phone").lean();
+      } else if (dispute.sellerRole === "supplier") {
+        sellerInfo = await supplier.findById(sellerId).select("name email phone").lean();
+      }
+      dispute.sellerId = sellerInfo || sellerId;
+    }
+  } catch (error) {
+    console.error("Error populating buyer/seller info:", error);
+  }
+};
+
 const populateOrderId = async (dispute) => {
   if (!dispute || !dispute.orderId) {
     return dispute;
@@ -647,8 +678,9 @@ export const respondToDispute = async (req, res, next) => {
     // Otherwise, it should already be escalated (handled by cron job)
     await dispute.save();
 
-    // Populate orderId for response
+    // Populate orderId, buyerId, and sellerId for response
     await populateOrderId(dispute);
+    await populateBuyerSeller(dispute);
 
     // Send email and notification to buyer
     try {
@@ -717,8 +749,9 @@ export const resolveDispute = async (req, res, next) => {
       return next(new ErrorHandler("Dispute not found", 404));
     }
 
-    // Populate orderId from both models
+    // Populate orderId, buyerId, and sellerId from both models
     await populateOrderId(dispute);
+    await populateBuyerSeller(dispute);
 
     // Verify buyer owns this dispute
     if (dispute.buyerId.toString() !== userId) {
@@ -774,8 +807,9 @@ export const resolveDispute = async (req, res, next) => {
 
     await dispute.save();
 
-    // Populate orderId for response
+    // Populate orderId, buyerId, and sellerId for response
     await populateOrderId(dispute);
+    await populateBuyerSeller(dispute);
 
     res.status(200).json({
       success: true,
@@ -851,8 +885,9 @@ export const adminRulingOnDispute = async (req, res, next) => {
       await order.save();
     }
 
-    // Populate orderId for response
+    // Populate orderId, buyerId, and sellerId for response
     await populateOrderId(dispute);
+    await populateBuyerSeller(dispute);
 
     // Get admin details for notifications
     const adminUser = await admin.findById(adminId);
@@ -966,15 +1001,24 @@ export const getSellerDisputes = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const disputes = await Dispute.find(filter)
-      .populate("buyerId", "name email phone")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    // Manually populate orderId from both Order and OrderMultiVendor models
+    // Manually populate buyerId and orderId from both Order and OrderMultiVendor models
     const disputesWithOrders = await Promise.all(
       disputes.map(async (dispute) => {
+        // Populate buyerId - could be Buyer or Farmer
+        const buyerId = dispute.buyerId?._id || dispute.buyerId;
+        if (buyerId) {
+          let buyerInfo = await buyer.findById(buyerId).select("name email phone").lean();
+          if (!buyerInfo) {
+            buyerInfo = await farmer.findById(buyerId).select("name email phone").lean();
+          }
+          dispute.buyerId = buyerInfo || buyerId;
+        }
+
         // Get orderId - could be ObjectId or already populated object
         const orderId = dispute.orderId?._id || dispute.orderId;
         
@@ -1038,11 +1082,20 @@ export const getSellerDisputeById = async (req, res, next) => {
       sellerId: userId,
       sellerRole: role
     })
-      .populate("buyerId", "name email phone address")
       .lean();
 
     if (!dispute) {
       return next(new ErrorHandler("Dispute not found or access denied", 404));
+    }
+
+    // Populate buyerId - could be Buyer or Farmer
+    const buyerId = dispute.buyerId?._id || dispute.buyerId;
+    if (buyerId) {
+      let buyerInfo = await buyer.findById(buyerId).select("name email phone").lean();
+      if (!buyerInfo) {
+        buyerInfo = await farmer.findById(buyerId).select("name email phone").lean();
+      }
+      dispute.buyerId = buyerInfo || buyerId;
     }
 
     // Populate orderId from both models
@@ -1106,15 +1159,26 @@ export const getBuyerDisputes = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const disputes = await Dispute.find(filter)
-      .populate("sellerId", "name email phone")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    // Manually populate orderId from both Order and OrderMultiVendor models
+    // Manually populate sellerId and orderId from both Order and OrderMultiVendor models
     const disputesWithOrders = await Promise.all(
       disputes.map(async (dispute) => {
+        // Populate sellerId - could be Farmer or Supplier (based on sellerRole)
+        const sellerId = dispute.sellerId?._id || dispute.sellerId;
+        if (sellerId) {
+          let sellerInfo = null;
+          if (dispute.sellerRole === "farmer") {
+            sellerInfo = await farmer.findById(sellerId).select("name email phone").lean();
+          } else if (dispute.sellerRole === "supplier") {
+            sellerInfo = await supplier.findById(sellerId).select("name email phone").lean();
+          }
+          dispute.sellerId = sellerInfo || sellerId;
+        }
+
         // Get orderId - could be ObjectId or already populated object
         const orderId = dispute.orderId?._id || dispute.orderId;
         
@@ -1177,11 +1241,22 @@ export const getBuyerDisputeById = async (req, res, next) => {
       _id: disputeId,
       buyerId: userId
     })
-      .populate("sellerId", "name email phone address")
       .lean();
 
     if (!dispute) {
       return next(new ErrorHandler("Dispute not found or access denied", 404));
+    }
+
+    // Populate sellerId - could be Farmer or Supplier (based on sellerRole)
+    const sellerId = dispute.sellerId?._id || dispute.sellerId;
+    if (sellerId) {
+      let sellerInfo = null;
+      if (dispute.sellerRole === "farmer") {
+        sellerInfo = await farmer.findById(sellerId).select("name email phone").lean();
+      } else if (dispute.sellerRole === "supplier") {
+        sellerInfo = await supplier.findById(sellerId).select("name email phone").lean();
+      }
+      dispute.sellerId = sellerInfo || sellerId;
     }
 
     // Populate orderId from both models
