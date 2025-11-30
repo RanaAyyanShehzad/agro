@@ -1,5 +1,6 @@
 import ErrorHandler from "../middlewares/error.js";
 import { getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from "../utils/notifications.js";
+import jwt from "jsonwebtoken";
 
 /**
  * Get all notifications for the authenticated user
@@ -8,7 +9,21 @@ export const getUserNotificationsController = async (req, res, next) => {
   try {
     // Ensure we get the userId as string or ObjectId properly
     const userId = req.user._id || req.user.id;
-    const userRole = req.user.role;
+    
+    // Get role from req.user or fallback to JWT token
+    let userRole = req.user.role;
+    if (!userRole) {
+      // Fallback: get role from JWT token
+      const { token } = req.cookies;
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          userRole = decoded.role;
+        } catch (error) {
+          // Token verification failed, continue with error
+        }
+      }
+    }
     
     if (!userId) {
       return next(new ErrorHandler("User ID not found", 400));
@@ -69,7 +84,24 @@ export const markNotificationAsReadController = async (req, res, next) => {
 export const markAllNotificationsAsReadController = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const userRole = req.user.role;
+    
+    // Get role from req.user or fallback to JWT token
+    let userRole = req.user.role;
+    if (!userRole) {
+      const { token } = req.cookies;
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          userRole = decoded.role;
+        } catch (error) {
+          // Token verification failed
+        }
+      }
+    }
+    
+    if (!userRole) {
+      return next(new ErrorHandler("User role not found", 400));
+    }
 
     const result = await markAllNotificationsAsRead(userId, userRole);
 
