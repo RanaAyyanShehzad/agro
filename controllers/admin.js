@@ -1277,8 +1277,10 @@ export const suspendUser = async (req, res, next) => {
       return next(new ErrorHandler("Invalid role", 400));
     }
 
-    if (!duration || duration <= 0) {
-      return next(new ErrorHandler("Suspension duration (in minutes) is required", 400));
+    // Ensure duration is a valid positive integer
+    const suspensionDuration = parseInt(duration);
+    if (isNaN(suspensionDuration) || suspensionDuration <= 0) {
+      return next(new ErrorHandler("Suspension duration (in minutes) is required and must be positive", 400));
     }
 
     let UserModel;
@@ -1291,32 +1293,40 @@ export const suspendUser = async (req, res, next) => {
       return next(new ErrorHandler("User not found", 404));
     }
 
-    const suspendedtime = new Date();
-    suspendedtime.setMinutes(suspendedtime.getMinutes() + parseInt(duration));
+    // --- Time Calculation & Storage ---
+
+    // 1. Calculate the suspension end time (stores as a standard UTC Date object)
+    const suspendedUntilUTC = new Date();
+    suspendedUntilUTC.setMinutes(suspendedUntilUTC.getMinutes() + suspensionDuration);
+    
+    // 2. Define options for PKT display
     const options = {
-      // Specify the time zone for Pakistan Standard Time
       timeZone: 'Asia/Karachi', 
-      
-      // Customize the display format
       year: 'numeric',
       month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: true // Use AM/PM format
-  };
-  
-  // Convert to Pakistan Time string
-  const suspendedUntil = suspendedtime.toLocaleString('en-US', options);
+      hour12: true
+    };
+    
+    // 3. Create the formatted PKT string for notifications and response
+    // This is the string representation, not the Date object for the DB.
+    const suspendedUntilPKTString = suspendedUntilUTC.toLocaleString('en-US', options);
+
+    // --- Update User Model ---
+
     user.isSuspended = true;
-    user.suspendedUntil = suspendedUntil;
+    // CRITICAL FIX: Store the actual UTC Date object in the database
+    user.suspendedUntil = suspendedUntilUTC; 
     user.suspensionReason = reason || "Policy violation";
     user.isActive = false;
 
     await user.save();
 
-    // Create audit log
+    // --- Audit Log ---
+
     await createAuditLog(
       adminId,
       adminName,
@@ -1325,29 +1335,41 @@ export const suspendUser = async (req, res, next) => {
       userId,
       {
         entityName: user.email,
-        details: { duration, reason: user.suspensionReason, suspendedUntil }
+        details: { 
+          duration: suspensionDuration, 
+          reason: user.suspensionReason, 
+          // Log the readable PKT string
+          suspendedUntilPKT: suspendedUntilPKTString 
+        }
       }
     );
 
-    // Send notification
+    // --- Send Notification ---
+
     await createNotification(
       userId,
       role,
       "account_suspended",
       "Account Suspended",
-      `Your account has been suspended until ${suspendedUntil.toLocaleString()}. Reason: ${user.suspensionReason}`,
+      // Use the correctly formatted PKT string for the message
+      `Your account has been suspended until ${suspendedUntilPKTString}. Reason: ${user.suspensionReason}`, 
       { priority: "high", sendEmail: true }
     );
 
+    // --- Response ---
+
     res.status(200).json({
       success: true,
-      message: `User suspended until ${suspendedUntil.toLocaleString()}`,
+      // Use the correctly formatted PKT string for the response message
+      message: `User suspended until ${suspendedUntilPKTString}`, 
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
         isSuspended: user.isSuspended,
-        suspendedUntil: user.suspendedUntil,
+        // Send the UTC time back, or the formatted string (sending both is safest)
+        suspendedUntilUTC: user.suspendedUntil, 
+        suspendedUntilPKT: suspendedUntilPKTString,
         suspensionReason: user.suspensionReason
       }
     });
@@ -1355,7 +1377,6 @@ export const suspendUser = async (req, res, next) => {
     next(error);
   }
 };
-
 /**
  * Lift user suspension
  */
