@@ -1292,7 +1292,7 @@ export const suspendUser = async (req, res, next) => {
     }
 
     const suspendedtime = new Date();
-    suspendedUntil.setMinutes(suspendedUntil.getMinutes() + parseInt(duration));
+    suspendedtime.setMinutes(suspendedtime.getMinutes() + parseInt(duration));
     const options = {
       // Specify the time zone for Pakistan Standard Time
       timeZone: 'Asia/Karachi', 
@@ -1308,7 +1308,7 @@ export const suspendUser = async (req, res, next) => {
   };
   
   // Convert to Pakistan Time string
-  const suspendedUntil = suspendedUntil.toLocaleString('en-US', options);
+  const suspendedUntil = suspendedtime.toLocaleString('en-US', options);
     user.isSuspended = true;
     user.suspendedUntil = suspendedUntil;
     user.suspensionReason = reason || "Policy violation";
