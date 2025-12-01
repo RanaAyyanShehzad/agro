@@ -1291,9 +1291,24 @@ export const suspendUser = async (req, res, next) => {
       return next(new ErrorHandler("User not found", 404));
     }
 
-    const suspendedUntil = new Date();
+    const suspendedtime = new Date();
     suspendedUntil.setMinutes(suspendedUntil.getMinutes() + parseInt(duration));
-
+    const options = {
+      // Specify the time zone for Pakistan Standard Time
+      timeZone: 'Asia/Karachi', 
+      
+      // Customize the display format
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true // Use AM/PM format
+  };
+  
+  // Convert to Pakistan Time string
+  const suspendedUntil = suspendedUntil.toLocaleString('en-US', options);
     user.isSuspended = true;
     user.suspendedUntil = suspendedUntil;
     user.suspensionReason = reason || "Policy violation";

@@ -4,7 +4,7 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
   const token = jwt.sign(
     { _id: user._id, role },
     process.env.JWT_SECRET,
-    { expiresIn: "1h" }
+    { expiresIn: "2h" }
   );
 
   const isProduction = process.env.NODE_ENV === "production";
@@ -15,7 +15,7 @@ export const sendCookie = (user, role, res, message, statusCode = 200) => {
       httpOnly: true,
       secure: isProduction,
       sameSite: isProduction ? "none" : "lax",
-      maxAge: 1 * 60 * 60 * 1000,
+      maxAge: 2 * 60 * 60 * 1000,
     })
   .json({
     success: true,
