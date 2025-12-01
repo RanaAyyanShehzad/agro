@@ -1754,7 +1754,28 @@ export const adminChangeOrderStatus = async (req, res, next) => {
     } else {
       customer = await farmer.findById(customerId);
     }
-
+    if (customer) {
+      // FIX 1: Construct the notification type dynamically
+      // Map 'canceled' to 'order_cancelled'
+      const notificationType = status === 'canceled' || status === 'cancelled'
+          ? 'order_cancelled' 
+          : `order_${status}`; 
+  
+      await createNotification(
+          customerId,
+          customerModel.toLowerCase(),
+          // Use the dynamically generated type
+          notificationType, 
+          "Order Status Updated",
+          `Your order #${orderId} status has been changed to ${status} by admin.${reason ? ` Reason: ${reason}` : ""}`,
+          {
+              relatedId: order._id,
+              relatedType: "order",
+              priority: "high",
+              sendEmail: true
+          }
+      );
+  }
     if (customer) {
       await createNotification(
         customerId,
