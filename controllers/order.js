@@ -1809,6 +1809,61 @@ export const createDispute = async (req, res, next) => {
 };
 
 /**
+ * Get dispute by ID (buyer/seller can get their own disputes)
+ * GET /api/v1/order/dispute/:disputeId
+ */
+export const getDisputeById = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+    const userId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+
+    // Find dispute
+    const dispute = await Dispute.findById(disputeId)
+      .populate("orderId")
+      .populate("buyerId", "name email phone")
+      .populate("sellerId", "name email phone")
+      .populate("adminRuling.adminId", "name email")
+      .lean();
+    
+    if (!dispute) {
+      return next(new ErrorHandler("Dispute not found", 404));
+    }
+
+    // Check if user has permission to view this dispute
+    // Buyers can view disputes where they are the buyer
+    // Sellers can view disputes where they are the seller
+    // Admins can view any dispute
+    const isBuyer = (userRole === 'buyer' || userRole === 'farmer') && 
+                    dispute.buyerId.toString() === userId.toString();
+    const isSeller = (userRole === 'farmer' || userRole === 'supplier') && 
+                     dispute.sellerId.toString() === userId.toString();
+    const isAdmin = userRole === 'admin';
+
+    if (!isBuyer && !isSeller && !isAdmin) {
+      return next(new ErrorHandler("You don't have permission to view this dispute.", 403));
+    }
+
+    // Manually populate orderId if it's not already populated
+    if (dispute.orderId && typeof dispute.orderId === 'object' && !dispute.orderId.products) {
+      const order = await Order.findById(dispute.orderId._id || dispute.orderId)
+        .populate("products.productId", "name price images")
+        .populate("userId", "name email phone")
+        .populate("sellerId", "name email phone")
+        .lean();
+      dispute.orderId = order || dispute.orderId;
+    }
+
+    res.status(200).json({
+      success: true,
+      dispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get buyer disputes
  * GET /api/v1/order/disputes/buyer
  */

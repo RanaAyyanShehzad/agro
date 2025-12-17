@@ -399,7 +399,7 @@ function BuyerDisputes() {
                       // Fetch full dispute details if needed
                       try {
                         const response = await axios.get(
-                          `${API_BASE}/dispute/buyer/${dispute._id}`,
+                          `${API_BASE}/dispute/${dispute._id}`,
                           { withCredentials: true }
                         );
                         if (response.data.success && response.data.dispute) {

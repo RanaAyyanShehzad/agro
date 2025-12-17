@@ -15,6 +15,7 @@ import {
   acceptOrder,
   rejectOrder,
   createDispute,
+  getDisputeById,
   getBuyerDisputes,
   getSellerDisputes,
   respondToDispute,
@@ -116,6 +117,13 @@ router.get("/admin/all", getAllOrders);
  * Get all orders by order group ID
  */
 router.get("/group/:orderGroupId", getOrdersByGroup);
+
+/**
+ * GET /api/v1/order/dispute/:disputeId
+ * Get dispute by ID (buyer/seller can get their own disputes)
+ * Must come before /disputes/buyer to avoid route conflicts
+ */
+router.get("/dispute/:disputeId", getDisputeById);
 
 /**
  * GET /api/v1/order/disputes/buyer
