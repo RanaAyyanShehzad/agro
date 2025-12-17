@@ -62,3 +62,17 @@ export const isValidStatusTransition = (currentStatus, newStatus) => {
   return validTransitions[currentStatus]?.includes(newStatus) || false;
 };
 
+/**
+ * Generate a unique tracking ID for order logistics
+ * Format: PK-XXXXXX (where XXXXXX is alphanumeric)
+ * @returns {String} Tracking ID
+ */
+export const generateTrackingId = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let trackingId = 'PK-';
+  for (let i = 0; i < 6; i++) {
+    trackingId += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return trackingId;
+};
+

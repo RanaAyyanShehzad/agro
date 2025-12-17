@@ -10,6 +10,25 @@ const orderSchema = new mongoose.Schema({
     required: [true, "User role is required"],
     enum: ["buyer", "farmer"]
   },
+  // Seller information (single vendor per order)
+  sellerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: [true, "Seller ID is required"],
+    refPath: "sellerModel"
+  },
+  sellerModel: {
+    type: String,
+    required: true,
+    enum: ["Farmer", "Supplier"]
+  },
+  // Order grouping: orders from same checkout share same orderGroupId
+  orderGroupId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: function() {
+      return new mongoose.Types.ObjectId();
+    },
+    index: true
+  },
   products: [
     {
       productId: {
@@ -21,6 +40,11 @@ const orderSchema = new mongoose.Schema({
         type: Number,
         required: [true, "Quantity is required"],
         min: [1, "Quantity must be at least 1"]
+      },
+      price: {
+        type: Number,
+        required: [true, "Price is required"],
+        min: [0, "Price cannot be negative"]
       }
     }
   ],
@@ -37,11 +61,18 @@ const orderSchema = new mongoose.Schema({
       "pending", 
       "processing", 
       "shipped", 
+      "out_for_delivery",
       "delivered", 
       "received",
       "canceled"
     ],
     default: "pending"
+  },
+  // Tracking ID for logistics
+  trackingId: {
+    type: String,
+    unique: true,
+    sparse: true
   },
   // Expected delivery date (set when order is shipped)
   expected_delivery_date: {
@@ -49,6 +80,10 @@ const orderSchema = new mongoose.Schema({
   },
   // Timestamp when order was shipped
   shippedAt: {
+    type: Date
+  },
+  // Timestamp when order is out for delivery
+  outForDeliveryAt: {
     type: Date
   },
   // Timestamp when order was delivered
@@ -145,6 +180,31 @@ const orderSchema = new mongoose.Schema({
     },
     notes: {
       type: String
+    },
+    // Vehicle information
+    vehicle: {
+      name: {
+        type: String
+      },
+      registrationNumber: {
+        type: String
+      },
+      vehicleType: {
+        type: String,
+        enum: ["Motorcycle", "Car", "Van", "Truck", "Rickshaw", "Other"]
+      },
+      contactInfo: {
+        type: String
+      }
+    },
+    // Rider/Delivery person information
+    rider: {
+      name: {
+        type: String
+      },
+      contactInfo: {
+        type: String
+      }
     }
   },
   // Include order notes for any special instructions
@@ -162,11 +222,13 @@ const orderSchema = new mongoose.Schema({
 
 // Create indexes for frequent queries
 orderSchema.index({ userId: 1 });
+orderSchema.index({ sellerId: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ "paymentInfo.status": 1 });
-orderSchema.index({ "products.supplier.userID": 1 });
 orderSchema.index({ dispute_status: 1 });
 orderSchema.index({ payment_status: 1 });
 orderSchema.index({ expected_delivery_date: 1 });
+orderSchema.index({ orderGroupId: 1 }); // For grouping orders from same checkout
+orderSchema.index({ trackingId: 1 }); // For tracking ID lookups
 
 export const Order = mongoose.model("Order", orderSchema);

@@ -257,6 +257,11 @@ export const updateCartItem = async (req, res, next) => {
 
     // update cart quantity
     cart.products[index].quantity = quantity;
+
+    // Recalculate totals
+    await cart.populate("products.productId");
+    calculateCartTotals(cart);
+    
     cart.expirationTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // extend validity
     await cart.save();
 

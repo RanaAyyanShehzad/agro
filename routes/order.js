@@ -1,51 +1,82 @@
-import express from "express"
-import { isAuthenticated } from "../middlewares/auth.js"
-import { cancelOrder, createOrder, getAllOrders, getOrderById, getSupplierOrders, getUserOrders, updateOrderStatus } from "../controllers/order.js";
-import { 
-  updateOrderToDelivered, 
-  confirmOrderReceipt, 
-  createDispute, 
-  respondToDispute, 
-  resolveDispute,
-  adminRulingOnDispute,
-  getSellerDisputes,
-  getSellerDisputeById,
-  getBuyerDisputes,
-  getBuyerDisputeById
-} from "../controllers/orderManagement.js";
-import { acceptOrder, rejectOrder } from "../controllers/orderWorkflow.js";
-import { checkIsAdmin } from "../middlewares/checkIsAdmin.js";
+import express from "express";
+import { isAuthenticated } from "../middlewares/auth.js";
+import {
+  createOrder,
+  getUserOrders,
+  getOrderById,
+  updateOrderStatus,
+  cancelOrder,
+  getSupplierOrders,
+  getAllOrders,
+  getOrdersByGroup,
+  markOutForDelivery,
+  confirmDelivery
+} from "../controllers/order.js";
 
-const router=express.Router();
+const router = express.Router();
+
+// All routes require authentication
 router.use(isAuthenticated);
 
-// Order creation and retrieval
-router.post('/place-order',createOrder);
-router.get('/user-orders',getUserOrders);
-router.get('/item/:orderId',getOrderById);
-router.put('/cancel/:orderId',cancelOrder);
-router.get('/supplier-orders',getSupplierOrders);
-router.get('/all',getAllOrders);
+/**
+ * POST /api/v1/order/create
+ * Create order from cart
+ */
+router.post("/create", createOrder);
 
-// Order workflow (seller accept/reject)
-router.post('/:orderId/accept', acceptOrder);
-router.post('/:orderId/reject', rejectOrder);
+/**
+ * GET /api/v1/order/my-orders
+ * Get all orders for the authenticated user (buyer/farmer)
+ */
+router.get("/my-orders", getUserOrders);
 
-// Order status updates
-router.put('/update-status/:orderId',updateOrderStatus);
-router.put('/delivered/:orderId', updateOrderToDelivered);
-router.put('/confirm-receipt/:orderId', confirmOrderReceipt);
+/**
+ * GET /api/v1/order/:orderId
+ * Get order by ID
+ */
+router.get("/:orderId", getOrderById);
 
-// Dispute management
-router.post('/dispute/:orderId', createDispute);
-router.get('/disputes', getSellerDisputes); // Seller get all disputes (farmer/supplier only)
-router.get('/disputes/buyer', getBuyerDisputes); // Buyer get all disputes (buyer/farmer only)
-router.get('/dispute/:disputeId', getSellerDisputeById); // Seller get dispute by ID (farmer/supplier only)
-router.get('/dispute/buyer/:disputeId', getBuyerDisputeById); // Buyer get dispute by ID (buyer/farmer only)
-router.put('/dispute/:disputeId/respond', respondToDispute);
-router.put('/dispute/:disputeId/resolve', resolveDispute);
+/**
+ * PUT /api/v1/order/:orderId/status
+ * Update order status (seller/admin only)
+ */
+router.put("/:orderId/status", updateOrderStatus);
 
-// Admin-only dispute resolution
-router.put('/dispute/:disputeId/admin-ruling', checkIsAdmin, adminRulingOnDispute);
+/**
+ * POST /api/v1/order/:orderId/out-for-delivery
+ * Mark order as out for delivery with delivery details (seller only)
+ */
+router.post("/:orderId/out-for-delivery", markOutForDelivery);
+
+/**
+ * POST /api/v1/order/:orderId/confirm-delivery
+ * Confirm delivery (buyer only)
+ */
+router.post("/:orderId/confirm-delivery", confirmDelivery);
+
+/**
+ * PATCH /api/v1/order/:orderId/cancel
+ * Cancel order (buyer only)
+ */
+router.patch("/:orderId/cancel", cancelOrder);
+
+/**
+ * GET /api/v1/order/seller/orders
+ * Get all orders for the authenticated seller (farmer/supplier)
+ */
+router.get("/seller/orders", getSupplierOrders);
+
+/**
+ * GET /api/v1/order/admin/all
+ * Get all orders (admin only)
+ */
+router.get("/admin/all", getAllOrders);
+
+/**
+ * GET /api/v1/order/group/:orderGroupId
+ * Get all orders by order group ID
+ */
+router.get("/group/:orderGroupId", getOrdersByGroup);
 
 export default router;
+
