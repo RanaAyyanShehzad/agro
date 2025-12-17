@@ -226,8 +226,8 @@ export const createOrder = async (req, res, next) => {
         "Order Placed Successfully",
         `Your order has been placed successfully. ${createdOrders.length} order(s) created.`,
         {
-          relatedId: orderGroupId.toString(),
-          relatedType: "order_group",
+          relatedId: orderGroupId,
+          relatedType: "order",
           actionUrl: `/orders?group=${orderGroupId}`,
           priority: "medium"
         }
