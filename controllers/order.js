@@ -1252,7 +1252,7 @@ export const acceptOrder = async (req, res, next) => {
 
     // Update order status
     const oldStatus = order.status;
-    order.status = "confirmed"; // Changed from pending to confirmed
+    order.status = "processing"; // Changed from pending to processing (confirmed status doesn't exist in enum)
     
     // Set estimated delivery date if provided
     if (estimatedDeliveryDate) {
@@ -1273,7 +1273,7 @@ export const acceptOrder = async (req, res, next) => {
         { userId, role: userRole, name: req.user.name || "" },
         "status",
         oldStatus,
-        "confirmed",
+        "processing",
         null,
         `Order accepted by seller${estimatedDeliveryDate ? `. Estimated delivery: ${estimatedDeliveryDate}` : ''}`
       );

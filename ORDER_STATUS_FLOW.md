@@ -4,7 +4,7 @@
 
 ### Status Sequence:
 ```
-pending → confirmed → processing → shipped → out_for_delivery → delivered → received
+pending → processing → shipped → out_for_delivery → delivered → received
 ```
 
 ### Detailed Status Flow:
@@ -12,26 +12,22 @@ pending → confirmed → processing → shipped → out_for_delivery → delive
 1. **pending** (Initial Status)
    - Order is created by buyer
    - Waiting for seller to accept/reject
-   - **Action**: Seller can accept (→ confirmed) or reject (→ canceled)
+   - **Action**: Seller can accept (→ processing) or reject (→ canceled)
 
-2. **confirmed** (After Seller Accepts)
+2. **processing** (After Seller Accepts)
    - Seller has accepted the order
    - Order is being prepared
-   - **Action**: Seller can update to "processing"
-
-3. **processing** (Order Being Prepared)
-   - Seller is preparing the order
    - Products are being packaged
    - **Action**: Seller can update to "shipped"
 
-4. **shipped** (Order Dispatched)
+3. **shipped** (Order Dispatched)
    - Order has been shipped
    - `expected_delivery_date` is automatically set (default: 7 days from shipped date)
    - `shippedAt` timestamp is set
    - **Action**: Seller can mark as "out_for_delivery"
    - **Dispute**: Buyer can create dispute if expected delivery date has expired
 
-5. **out_for_delivery** (On the Way)
+4. **out_for_delivery** (On the Way)
    - Order is out for delivery with vehicle and rider details
    - `trackingId` is generated (if not already set)
    - `outForDeliveryAt` timestamp is set
@@ -39,13 +35,13 @@ pending → confirmed → processing → shipped → out_for_delivery → delive
    - **Action**: Buyer can confirm delivery (→ delivered)
    - **Dispute**: Buyer can create dispute for non-delivery
 
-6. **delivered** (Buyer Confirmed Delivery)
+5. **delivered** (Buyer Confirmed Delivery)
    - Buyer has confirmed receiving the order
    - `deliveredAt` timestamp is set
    - **Action**: Buyer can confirm receipt (→ received)
    - **Dispute**: Buyer can still create dispute for product faults/issues
 
-7. **received** (Final Status)
+6. **received** (Final Status)
    - Buyer has confirmed receipt
    - Payment is completed
    - `receivedAt` timestamp is set
@@ -57,10 +53,8 @@ pending → confirmed → processing → shipped → out_for_delivery → delive
 
 | From Status | To Status | Who Can Do | Notes |
 |------------|-----------|------------|-------|
-| pending | confirmed | Seller | Seller accepts order |
+| pending | processing | Seller | Seller accepts order |
 | pending | canceled | Seller | Seller rejects order |
-| confirmed | processing | Seller | Seller starts processing |
-| confirmed | canceled | Seller | Seller cancels |
 | processing | shipped | Seller | Seller ships order |
 | processing | canceled | Seller | Seller cancels |
 | shipped | out_for_delivery | Seller | Seller marks with vehicle/rider details |

@@ -333,14 +333,12 @@ function OrderManagement() {
   // Validate status transition on frontend (must match backend allowedTransitions)
   const validateStatusTransition = (currentStatus, newStatus) => {
     // Backend allowedTransitions from controllers/order.js:
-    // pending → confirmed, cancelled
-    // confirmed → processing, cancelled
+    // pending → processing (via accept), cancelled (via reject)
     // processing → shipped, cancelled
-    // shipped → out_for_delivery, cancelled (but out_for_delivery should use button, not dropdown)
+    // shipped → out_for_delivery (use "Mark Out for Delivery" button, not dropdown)
     // Note: delivered and received cannot be set by seller (buyer only)
     const validTransitions = {
-      pending: ["confirmed", "cancelled"],
-      confirmed: ["processing", "cancelled"],
+      pending: ["cancelled"], // Accept changes to processing, reject changes to cancelled
       processing: ["shipped", "cancelled"],
       shipped: ["cancelled"], // out_for_delivery should use "Mark Out for Delivery" button, not dropdown
       out_for_delivery: [], // Cannot be changed by seller - buyer must confirm delivery
@@ -1739,6 +1737,10 @@ function OrderManagement() {
                                 </td>
                                 <td className="px-4 py-4">
                                   {(() => {
+                                    // Check if order itself is cancelled - if so, no status updates allowed
+                                    const orderStatus = (selectedOrder.orderStatus || selectedOrder.status || "").toLowerCase();
+                                    const isOrderCancelled = orderStatus === "cancelled" || orderStatus === "canceled";
+                                    
                                     // Get valid next statuses based on current status
                                     // Must match backend allowedTransitions in controllers/order.js
                                     const getValidNextStatuses = (
@@ -1749,8 +1751,7 @@ function OrderManagement() {
                                       ).toLowerCase();
 
                                       // Backend allowedTransitions:
-                                      // pending → confirmed, cancelled (but use accept/reject buttons, not dropdown)
-                                      // confirmed → processing, cancelled
+                                      // pending → processing (via accept), cancelled (via reject)
                                       // processing → shipped, cancelled
                                       // shipped → out_for_delivery (use "Mark Out for Delivery" button, not dropdown)
                                       // out_for_delivery → [] (buyer must confirm delivery)
@@ -1761,9 +1762,6 @@ function OrderManagement() {
                                       if (statusLower === "pending") {
                                         // Pending orders should be accepted/rejected first, not status changed via dropdown
                                         return [];
-                                      }
-                                      if (statusLower === "confirmed") {
-                                        return ["processing", "cancelled"];
                                       }
                                       if (statusLower === "processing") {
                                         return ["shipped", "cancelled"];
@@ -1795,12 +1793,25 @@ function OrderManagement() {
                                     const validStatuses =
                                       getValidNextStatuses(productStatus);
                                     const canChangeStatus =
-                                      validStatuses.length > 0 && !isCancelled;
+                                      validStatuses.length > 0 && !isCancelled && !isOrderCancelled;
                                     const isDeliveredOrReceived =
                                       productStatus === "delivered" ||
                                       productStatus === "received";
                                     const isOutForDelivery =
                                       productStatus === "out_for_delivery";
+
+                                    // If order is cancelled, show status only (no dropdown)
+                                    if (isOrderCancelled) {
+                                      return (
+                                        <span
+                                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                            getStatusInfo(productStatus).color
+                                          }`}
+                                        >
+                                          {getStatusInfo(productStatus).text}
+                                        </span>
+                                      );
+                                    }
 
                                     if (
                                       !canChangeStatus &&
