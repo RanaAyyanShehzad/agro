@@ -9,6 +9,7 @@ import { sendEmail } from "../utils/sendEmail.js";
 import { supplier } from '../models/supplier.js';
 import { product } from '../models/products.js';
 import { calculateOrderStatus, generateTrackingId } from '../utils/orderHelpers.js';
+import { Dispute } from '../models/dispute.js';
 
 const getRole = (req) => {
   const { token } = req.cookies;
@@ -1652,6 +1653,550 @@ export const getOrdersByGroup = async (req, res, next) => {
         }))
       }
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Create dispute (buyer only)
+ * POST /api/v1/order/dispute/:orderId
+ * 
+ * Disputes can be created:
+ * 1. After order is "shipped" AND expected delivery date has expired
+ * 2. After order is "out_for_delivery" (buyer can dispute non-delivery)
+ * 3. After order is "delivered" (buyer confirmed delivery but can dispute product issues)
+ * 4. After order is "received" (buyer can still dispute product quality/faults)
+ */
+export const createDispute = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { disputeType, reason, proofOfFault } = req.body;
+    const userId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+
+    // Only buyers and farmers (as customers) can create disputes
+    if (userRole !== 'buyer' && userRole !== 'farmer') {
+      return next(new ErrorHandler("Only buyers can create disputes", 403));
+    }
+
+    // Find order
+    const order = await Order.findById(orderId)
+      .populate("products.productId")
+      .populate("userId", "name email phone address")
+      .populate("sellerId", "name email");
+    
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
+    // Check if user is the customer of this order
+    if (order.userId.toString() !== userId.toString()) {
+      return next(new ErrorHandler("You don't have permission to create a dispute for this order.", 403));
+    }
+
+    // Check if dispute already exists for this order
+    const existingDispute = await Dispute.findOne({ orderId });
+    if (existingDispute) {
+      return next(new ErrorHandler("A dispute already exists for this order", 400));
+    }
+
+    // Validate required fields
+    if (!disputeType || !reason) {
+      return next(new ErrorHandler("Dispute type and reason are required", 400));
+    }
+
+    // Validate order status - disputes can only be created after order is shipped or later
+    const validStatusesForDispute = ["shipped", "out_for_delivery", "delivered", "received"];
+    if (!validStatusesForDispute.includes(order.status)) {
+      return next(new ErrorHandler(
+        `Cannot create dispute. Order must be in one of these statuses: ${validStatusesForDispute.join(", ")}. ` +
+        `Current status: "${order.status}". ` +
+        `Disputes can only be created after the order has been shipped.`,
+        400
+      ));
+    }
+
+    // Special validation for "shipped" status - check if expected delivery date has expired
+    if (order.status === "shipped") {
+      if (!order.expected_delivery_date) {
+        return next(new ErrorHandler(
+          "Cannot create dispute. Expected delivery date is not set for this order. " +
+          "Please wait until the seller sets the expected delivery date or marks the order as out for delivery.",
+          400
+        ));
+      }
+
+      const now = new Date();
+      const expectedDeliveryDate = new Date(order.expected_delivery_date);
+      
+      // Allow dispute if expected delivery date has passed (with 1 day buffer for timezone issues)
+      const oneDayInMs = 24 * 60 * 60 * 1000;
+      if (now < new Date(expectedDeliveryDate.getTime() + oneDayInMs)) {
+        return next(new ErrorHandler(
+          `Cannot create dispute yet. Expected delivery date is ${expectedDeliveryDate.toLocaleDateString()}. ` +
+          `You can create a dispute after the expected delivery date has passed.`,
+          400
+        ));
+      }
+    }
+
+    // For "out_for_delivery" status - buyer can dispute non-delivery
+    // For "delivered" and "received" status - buyer can dispute product faults/issues
+    // No additional validation needed for these statuses
+
+    // Get seller information
+    const sellerId = order.sellerId;
+    const sellerModel = order.sellerModel;
+    const sellerRole = sellerModel === "Farmer" ? "farmer" : "supplier";
+
+    // Create dispute
+    const dispute = await Dispute.create({
+      orderId: order._id,
+      buyerId: userId,
+      sellerId: sellerId,
+      sellerRole: sellerRole,
+      disputeType,
+      reason,
+      buyerProof: proofOfFault ? {
+        images: proofOfFault.images || [],
+        description: proofOfFault.description || "",
+        uploadedAt: new Date()
+      } : undefined,
+      status: "open"
+    });
+
+    // Update order dispute status
+    order.dispute_status = "open";
+    await order.save();
+
+    // Send notification to seller
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      await createNotification(
+        sellerId,
+        sellerRole,
+        "dispute_created",
+        "New Dispute Created",
+        `A dispute has been created for order #${orderId}. Please respond to resolve it.`,
+        {
+          relatedId: dispute._id,
+          relatedType: "dispute",
+          actionUrl: `/disputes/${dispute._id}`,
+          priority: "high",
+          sendEmail: true
+        }
+      );
+    } catch (notifError) {
+      console.error("Failed to send dispute notification:", notifError);
+    }
+
+    // Populate dispute for response
+    const populatedDispute = await Dispute.findById(dispute._id)
+      .populate("orderId")
+      .populate("buyerId", "name email")
+      .populate("sellerId", "name email")
+      .lean();
+
+    res.status(201).json({
+      success: true,
+      message: "Dispute created successfully",
+      dispute: populatedDispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get buyer disputes
+ * GET /api/v1/order/disputes/buyer
+ */
+export const getBuyerDisputes = async (req, res, next) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+    const { status, page = 1, limit = 50 } = req.query;
+
+    // Only buyers and farmers (as customers) can get their disputes
+    if (userRole !== 'buyer' && userRole !== 'farmer') {
+      return next(new ErrorHandler("Only buyers can access this endpoint", 403));
+    }
+
+    const filter = { buyerId: userId };
+    if (status && status !== "all") {
+      filter.status = status;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const disputes = await Dispute.find(filter)
+      .populate("orderId")
+      .populate("sellerId", "name email phone")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Dispute.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: disputes.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      disputes
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get seller disputes
+ * GET /api/v1/order/disputes
+ */
+export const getSellerDisputes = async (req, res, next) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+    const { status, page = 1, limit = 50 } = req.query;
+
+    // Only sellers (farmer/supplier) can get their disputes
+    if (userRole !== 'farmer' && userRole !== 'supplier') {
+      return next(new ErrorHandler("Only sellers can access this endpoint", 403));
+    }
+
+    const sellerRole = userRole;
+    const filter = { 
+      sellerId: userId,
+      sellerRole: sellerRole
+    };
+    if (status && status !== "all") {
+      filter.status = status;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const disputes = await Dispute.find(filter)
+      .populate("orderId")
+      .populate("buyerId", "name email phone")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Dispute.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: disputes.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      disputes
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Seller respond to dispute
+ * PUT /api/v1/order/dispute/:disputeId/respond
+ */
+export const respondToDispute = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+    const { evidence, proposal } = req.body;
+    const userId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+
+    // Only sellers (farmer/supplier) can respond to disputes
+    if (userRole !== 'farmer' && userRole !== 'supplier') {
+      return next(new ErrorHandler("Only sellers can respond to disputes", 403));
+    }
+
+    // Find dispute
+    const dispute = await Dispute.findById(disputeId)
+      .populate("orderId")
+      .populate("buyerId", "name email")
+      .populate("sellerId", "name email");
+    
+    if (!dispute) {
+      return next(new ErrorHandler("Dispute not found", 404));
+    }
+
+    // Check if user is the seller of this dispute
+    if (dispute.sellerId.toString() !== userId.toString()) {
+      return next(new ErrorHandler("You don't have permission to respond to this dispute.", 403));
+    }
+
+    // Check if dispute is still open
+    if (dispute.status !== "open") {
+      return next(new ErrorHandler(`Cannot respond to dispute. Current status: "${dispute.status}"`, 400));
+    }
+
+    // Validate required fields
+    if (!proposal || proposal.trim() === "") {
+      return next(new ErrorHandler("Resolution proposal is required", 400));
+    }
+
+    // Update dispute with seller response
+    dispute.sellerResponse = {
+      evidence: evidence || [],
+      proposal: proposal.trim(),
+      respondedAt: new Date()
+    };
+    dispute.status = "pending_admin_review";
+
+    // Update order dispute status
+    const order = await Order.findById(dispute.orderId);
+    if (order) {
+      order.dispute_status = "pending_admin_review";
+      await order.save();
+    }
+
+    await dispute.save();
+
+    // Send notification to buyer
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      await createNotification(
+        dispute.buyerId,
+        "buyer",
+        "dispute_response",
+        "Seller Responded to Dispute",
+        `The seller has responded to your dispute for order #${dispute.orderId}. Please review their proposal.`,
+        {
+          relatedId: dispute._id,
+          relatedType: "dispute",
+          actionUrl: `/disputes/${dispute._id}`,
+          priority: "medium",
+          sendEmail: true
+        }
+      );
+    } catch (notifError) {
+      console.error("Failed to send dispute response notification:", notifError);
+    }
+
+    // Populate dispute for response
+    const populatedDispute = await Dispute.findById(dispute._id)
+      .populate("orderId")
+      .populate("buyerId", "name email")
+      .populate("sellerId", "name email")
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      message: "Dispute response submitted successfully",
+      dispute: populatedDispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Admin ruling on dispute
+ * PUT /api/v1/order/dispute/:disputeId/admin-ruling
+ */
+export const adminRuling = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+    const { decision, notes } = req.body;
+    const adminId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+
+    // Only admins can make rulings
+    if (userRole !== 'admin') {
+      return next(new ErrorHandler("Only admins can make dispute rulings", 403));
+    }
+
+    // Find dispute
+    const dispute = await Dispute.findById(disputeId)
+      .populate("orderId")
+      .populate("buyerId", "name email")
+      .populate("sellerId", "name email");
+    
+    if (!dispute) {
+      return next(new ErrorHandler("Dispute not found", 404));
+    }
+
+    // Validate decision
+    if (!decision || !["buyer_win", "seller_win"].includes(decision)) {
+      return next(new ErrorHandler("Valid decision (buyer_win or seller_win) is required", 400));
+    }
+
+    // Update dispute with admin ruling
+    dispute.adminRuling = {
+      decision,
+      notes: notes || "",
+      ruledAt: new Date(),
+      adminId: adminId
+    };
+    dispute.status = "closed";
+    dispute.resolvedAt = new Date();
+
+    // Update order dispute status
+    const order = await Order.findById(dispute.orderId);
+    if (order) {
+      order.dispute_status = "closed";
+      await order.save();
+    }
+
+    await dispute.save();
+
+    // Send notifications to both parties
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      const winner = decision === "buyer_win" ? dispute.buyerId : dispute.sellerId;
+      const loser = decision === "buyer_win" ? dispute.sellerId : dispute.buyerId;
+      const winnerRole = decision === "buyer_win" ? "buyer" : dispute.sellerRole;
+      const loserRole = decision === "buyer_win" ? dispute.sellerRole : "buyer";
+
+      await createNotification(
+        winner,
+        winnerRole,
+        "dispute_resolved",
+        "Dispute Resolved in Your Favor",
+        `The dispute for order #${dispute.orderId} has been resolved in your favor.`,
+        {
+          relatedId: dispute._id,
+          relatedType: "dispute",
+          priority: "high",
+          sendEmail: true
+        }
+      );
+
+      await createNotification(
+        loser,
+        loserRole,
+        "dispute_resolved",
+        "Dispute Resolved",
+        `The dispute for order #${dispute.orderId} has been resolved.`,
+        {
+          relatedId: dispute._id,
+          relatedType: "dispute",
+          priority: "medium",
+          sendEmail: true
+        }
+      );
+    } catch (notifError) {
+      console.error("Failed to send dispute resolution notifications:", notifError);
+    }
+
+    // Populate dispute for response
+    const populatedDispute = await Dispute.findById(dispute._id)
+      .populate("orderId")
+      .populate("buyerId", "name email")
+      .populate("sellerId", "name email")
+      .populate("adminRuling.adminId", "name email")
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      message: "Dispute resolved successfully",
+      dispute: populatedDispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Resolve dispute (buyer accepts seller's proposal)
+ * PUT /api/v1/order/dispute/:disputeId/resolve
+ */
+export const resolveDispute = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+    const { action } = req.body; // "accept" or "reject"
+    const userId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+
+    // Only buyers can resolve disputes by accepting/rejecting seller's proposal
+    if (userRole !== 'buyer' && userRole !== 'farmer') {
+      return next(new ErrorHandler("Only buyers can resolve disputes", 403));
+    }
+
+    // Find dispute
+    const dispute = await Dispute.findById(disputeId)
+      .populate("orderId")
+      .populate("buyerId", "name email")
+      .populate("sellerId", "name email");
+    
+    if (!dispute) {
+      return next(new ErrorHandler("Dispute not found", 404));
+    }
+
+    // Check if user is the buyer of this dispute
+    if (dispute.buyerId.toString() !== userId.toString()) {
+      return next(new ErrorHandler("You don't have permission to resolve this dispute.", 403));
+    }
+
+    // Check if dispute has seller response
+    if (!dispute.sellerResponse || !dispute.sellerResponse.proposal) {
+      return next(new ErrorHandler("Seller has not responded to this dispute yet", 400));
+    }
+
+    // Check if dispute is in pending_admin_review status
+    if (dispute.status !== "pending_admin_review") {
+      return next(new ErrorHandler(`Cannot resolve dispute. Current status: "${dispute.status}"`, 400));
+    }
+
+    if (action === "accept") {
+      // Buyer accepts seller's proposal - close dispute
+      dispute.buyerAccepted = true;
+      dispute.status = "closed";
+      dispute.resolvedAt = new Date();
+
+      // Update order dispute status
+      const order = await Order.findById(dispute.orderId);
+      if (order) {
+        order.dispute_status = "closed";
+        await order.save();
+      }
+
+      await dispute.save();
+
+      // Send notification to seller
+      try {
+        const { createNotification } = await import("../utils/notifications.js");
+        await createNotification(
+          dispute.sellerId,
+          dispute.sellerRole,
+          "dispute_resolved",
+          "Dispute Resolved",
+          `The buyer has accepted your proposal for dispute #${disputeId}.`,
+          {
+            relatedId: dispute._id,
+            relatedType: "dispute",
+            priority: "medium",
+            sendEmail: true
+          }
+        );
+      } catch (notifError) {
+        console.error("Failed to send dispute resolution notification:", notifError);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Dispute resolved successfully. Seller's proposal accepted.",
+        dispute
+      });
+    } else if (action === "reject") {
+      // Buyer rejects seller's proposal - escalate to admin
+      dispute.status = "pending_admin_review";
+      await dispute.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Dispute escalated to admin for review",
+        dispute
+      });
+    } else {
+      return next(new ErrorHandler("Invalid action. Must be 'accept' or 'reject'", 400));
+    }
   } catch (error) {
     next(error);
   }

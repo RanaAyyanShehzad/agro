@@ -13,7 +13,13 @@ import {
   confirmDelivery,
   confirmReceipt,
   acceptOrder,
-  rejectOrder
+  rejectOrder,
+  createDispute,
+  getBuyerDisputes,
+  getSellerDisputes,
+  respondToDispute,
+  adminRuling,
+  resolveDispute
 } from "../controllers/order.js";
 
 const router = express.Router();
@@ -26,12 +32,6 @@ router.use(isAuthenticated);
  * Create order from cart
  */
 router.post("/create", createOrder);
-
-/**
- * POST /api/v1/order/place-order (alias for /create for backward compatibility)
- * Create order from cart
- */
-router.post("/place-order", createOrder);
 
 /**
  * GET /api/v1/order/my-orders
@@ -52,17 +52,10 @@ router.get("/user-orders", getUserOrders);
 router.get("/item/:orderId", getOrderById);
 
 /**
- * PUT /api/v1/order/update-status/:orderId (alias for backward compatibility)
- * Update order status (seller/admin only) - must come before /:orderId routes
+ * GET /api/v1/order/:orderId
+ * Get order by ID - must come after all specific routes
  */
-router.put("/update-status/:orderId", updateOrderStatus);
-
-/**
- * PUT /api/v1/order/confirm-receipt/:orderId
- * Confirm receipt (buyer only) - marks order as received and completes payment
- * Must come before /:orderId routes
- */
-router.put("/confirm-receipt/:orderId", confirmReceipt);
+router.get("/:orderId", getOrderById);
 
 /**
  * PUT /api/v1/order/:orderId/status
@@ -71,16 +64,10 @@ router.put("/confirm-receipt/:orderId", confirmReceipt);
 router.put("/:orderId/status", updateOrderStatus);
 
 /**
- * POST /api/v1/order/:orderId/accept
- * Accept order (seller only) - changes status from pending to confirmed
+ * PUT /api/v1/order/update-status/:orderId (alias for backward compatibility)
+ * Update order status (seller/admin only)
  */
-router.post("/:orderId/accept", acceptOrder);
-
-/**
- * POST /api/v1/order/:orderId/reject
- * Reject order (seller only) - changes status to canceled
- */
-router.post("/:orderId/reject", rejectOrder);
+router.put("/update-status/:orderId", updateOrderStatus);
 
 /**
  * POST /api/v1/order/:orderId/out-for-delivery
@@ -95,16 +82,16 @@ router.post("/:orderId/out-for-delivery", markOutForDelivery);
 router.post("/:orderId/confirm-delivery", confirmDelivery);
 
 /**
+ * PUT /api/v1/order/confirm-receipt/:orderId
+ * Confirm receipt (buyer only) - marks order as received and completes payment
+ */
+router.put("/confirm-receipt/:orderId", confirmReceipt);
+
+/**
  * PATCH /api/v1/order/:orderId/cancel
  * Cancel order (buyer only)
  */
 router.patch("/:orderId/cancel", cancelOrder);
-
-/**
- * GET /api/v1/order/:orderId
- * Get order by ID - must come after all specific routes
- */
-router.get("/:orderId", getOrderById);
 
 /**
  * GET /api/v1/order/seller/orders
@@ -129,6 +116,42 @@ router.get("/admin/all", getAllOrders);
  * Get all orders by order group ID
  */
 router.get("/group/:orderGroupId", getOrdersByGroup);
+
+/**
+ * GET /api/v1/order/disputes/buyer
+ * Get buyer disputes - must come before /disputes
+ */
+router.get("/disputes/buyer", getBuyerDisputes);
+
+/**
+ * GET /api/v1/order/disputes
+ * Get seller disputes (farmer/supplier)
+ */
+router.get("/disputes", getSellerDisputes);
+
+/**
+ * PUT /api/v1/order/dispute/:disputeId/respond
+ * Seller respond to dispute - must come before /dispute/:orderId
+ */
+router.put("/dispute/:disputeId/respond", respondToDispute);
+
+/**
+ * PUT /api/v1/order/dispute/:disputeId/admin-ruling
+ * Admin ruling on dispute - must come before /dispute/:orderId
+ */
+router.put("/dispute/:disputeId/admin-ruling", adminRuling);
+
+/**
+ * PUT /api/v1/order/dispute/:disputeId/resolve
+ * Resolve dispute (buyer accepts/rejects seller's proposal) - must come before /dispute/:orderId
+ */
+router.put("/dispute/:disputeId/resolve", resolveDispute);
+
+/**
+ * POST /api/v1/order/dispute/:orderId
+ * Create dispute (buyer only) - must come after all /dispute/:disputeId/* routes
+ */
+router.post("/dispute/:orderId", createDispute);
 
 export default router;
 
