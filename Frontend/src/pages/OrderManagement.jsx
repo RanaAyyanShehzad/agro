@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   FiSearch,
   FiFilter,
@@ -724,14 +724,14 @@ function OrderManagement() {
         return { color: "bg-yellow-100 text-yellow-800", text: "Pending" };
       case "processing":
         return { color: "bg-blue-100 text-blue-800", text: "Processing" };
-      case "confirmed":
-        return { color: "bg-purple-100 text-purple-800", text: "Confirmed" };
       case "shipped":
         return { color: "bg-indigo-100 text-indigo-800", text: "Shipped" };
       case "out_for_delivery":
         return { color: "bg-orange-100 text-orange-800", text: "Out for Delivery" };
       case "delivered":
         return { color: "bg-green-100 text-green-800", text: "Delivered" };
+      case "received":
+        return { color: "bg-emerald-100 text-emerald-800", text: "Received" };
       case "canceled":
       case "cancelled":
         return { color: "bg-red-100 text-red-800", text: "Cancelled" };
@@ -1505,6 +1505,68 @@ function OrderManagement() {
                             }
                           </span>
                         </div>
+                        {/* Status Sequence Indicator */}
+                        <div className="pt-3 border-t border-gray-200">
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                            Status Flow
+                          </div>
+                          <div className="flex items-center gap-1 text-xs">
+                            {(() => {
+                              const currentStatus = (selectedOrder.status || selectedOrder.orderStatus || "").toLowerCase();
+                              const statusSequence = ["pending", "processing", "shipped", "out_for_delivery", "delivered", "received"];
+                              const currentIndex = statusSequence.findIndex(s => s === currentStatus);
+                              
+                              return statusSequence.map((status, index) => {
+                                const isActive = index <= currentIndex;
+                                const isCurrent = index === currentIndex;
+                                const isCancelled = currentStatus === "cancelled" || currentStatus === "canceled";
+                                
+                                return (
+                                  <React.Fragment key={status}>
+                                    <div className="flex flex-col items-center">
+                                      <div
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
+                                          isCancelled && status !== "cancelled"
+                                            ? "bg-gray-200 text-gray-400"
+                                            : isCurrent
+                                            ? "bg-green-500 text-white"
+                                            : isActive
+                                            ? "bg-blue-500 text-white"
+                                            : "bg-gray-200 text-gray-400"
+                                        }`}
+                                        title={getStatusInfo(status).text}
+                                      >
+                                        {index + 1}
+                                      </div>
+                                      <span
+                                        className={`mt-1 text-[10px] text-center max-w-[60px] ${
+                                          isCurrent
+                                            ? "font-semibold text-green-600"
+                                            : isActive
+                                            ? "text-blue-600"
+                                            : "text-gray-400"
+                                        }`}
+                                      >
+                                        {getStatusInfo(status).text}
+                                      </span>
+                                    </div>
+                                    {index < statusSequence.length - 1 && (
+                                      <div
+                                        className={`h-0.5 w-4 ${
+                                          isCancelled && status !== "cancelled"
+                                            ? "bg-gray-200"
+                                            : index < currentIndex
+                                            ? "bg-blue-500"
+                                            : "bg-gray-200"
+                                        }`}
+                                      />
+                                    )}
+                                  </React.Fragment>
+                                );
+                              });
+                            })()}
+                          </div>
+                        </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Payment Method</span>
                           <span className="font-medium capitalize text-gray-800">
@@ -1767,8 +1829,8 @@ function OrderManagement() {
                                         return ["shipped", "cancelled"];
                                       }
                                       if (statusLower === "shipped") {
-                                        // Seller must use "Mark Out for Delivery" button instead of dropdown
-                                        return [];
+                                        // Allow seller to mark as out_for_delivery via dropdown
+                                        return ["out_for_delivery", "cancelled"];
                                       }
                                       if (statusLower === "out_for_delivery") {
                                         // Cannot be changed by seller - buyer must confirm delivery

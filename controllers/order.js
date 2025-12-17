@@ -463,7 +463,7 @@ export const updateOrderStatus = async (req, res, next) => {
     }
 
     // Validate status transitions
-    const validStatuses = ["pending", "confirmed", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"];
+    const validStatuses = ["pending", "processing", "shipped", "out_for_delivery", "delivered", "received", "cancelled"];
     if (!validStatuses.includes(status)) {
       return next(new ErrorHandler(
         `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
@@ -481,8 +481,7 @@ export const updateOrderStatus = async (req, res, next) => {
 
     // Define allowed transitions
     const allowedTransitions = {
-      "pending": ["confirmed", "cancelled"],
-      "confirmed": ["processing", "cancelled"],
+      "pending": ["processing", "cancelled"], // Accept changes to processing, reject changes to cancelled
       "processing": ["shipped", "cancelled"],
       "shipped": ["out_for_delivery", "cancelled"],
       "out_for_delivery": [], // Cannot change from out_for_delivery - buyer must confirm delivery
