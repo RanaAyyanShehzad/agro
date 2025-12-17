@@ -20,7 +20,7 @@ const getRole = (req) => {
 export const createOrder = async (req, res, next) => {
   try {
     const { cartId, paymentMethod, street, city, zipCode, phoneNumber, notes } = req.body;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
     const decode = getRole(req).role;
 
     const cart = await Cart.findOne({ _id: cartId, userId }).populate("products.productId");
@@ -276,7 +276,10 @@ export const createOrder = async (req, res, next) => {
 
 export const getUserOrders = async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
+    if (!userId) {
+      return next(new ErrorHandler("User ID not found", 401));
+    }
     const userRole = getRole(req).role;
     
     // Get all orders for this user
@@ -321,7 +324,7 @@ export const getUserOrders = async (req, res, next) => {
 export const getOrderById = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
     const userRole = getRole(req).role;
     
     const order = await Order.findById(orderId)
@@ -374,7 +377,7 @@ export const updateOrderStatus = async (req, res, next) => {
     const { orderId } = req.params;
     const { status } = req.body;
     const userRole = getRole(req).role;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
 
     // Validate status is provided
     if (!status) {
@@ -663,7 +666,7 @@ export const markOutForDelivery = async (req, res, next) => {
       riderContactInfo 
     } = req.body;
     const userRole = getRole(req).role;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
 
     // Only sellers (farmer/supplier) can mark orders as out for delivery
     if (userRole !== 'farmer' && userRole !== 'supplier') {
@@ -856,7 +859,7 @@ export const markOutForDelivery = async (req, res, next) => {
 export const confirmDelivery = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
     const userRole = getRole(req).role;
 
     // Only buyers and farmers (as customers) can confirm delivery
@@ -996,10 +999,465 @@ export const confirmDelivery = async (req, res, next) => {
   }
 };
 
+/**
+ * Buyer confirms receipt - marks order as "Received" and completes payment
+ * Only buyers can confirm receipt after the order is delivered
+ */
+export const confirmReceipt = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user._id || req.user.id;
+    const userRole = getRole(req).role;
+
+    // Only buyers and farmers (as customers) can confirm receipt
+    if (userRole !== 'buyer' && userRole !== 'farmer') {
+      return next(new ErrorHandler(
+        "Only buyers can confirm receipt. Sellers cannot confirm receipt.",
+        403
+      ));
+    }
+
+    // Find order
+    const order = await Order.findById(orderId)
+      .populate("products.productId")
+      .populate("userId", "name email phone address")
+      .populate("sellerId", "name email");
+    
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
+    // Check if user is the customer of this order
+    if (order.userId.toString() !== userId.toString()) {
+      return next(new ErrorHandler("You don't have permission to confirm this order.", 403));
+    }
+
+    // Check if order is in valid status
+    if (order.status !== 'delivered') {
+      return next(new ErrorHandler(
+        `Cannot confirm receipt. Order must be in "delivered" status. Current status: "${order.status}"`,
+        400
+      ));
+    }
+
+    // Check if dispute is open
+    if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
+      return next(new ErrorHandler(
+        "Cannot confirm receipt while dispute is open. Please resolve the dispute first.",
+        400
+      ));
+    }
+
+    // Update order status
+    const oldStatus = order.status;
+    order.status = "received";
+    order.receivedAt = new Date();
+    
+    // Complete payment
+    order.payment_status = "complete";
+    if (order.paymentInfo) {
+      order.paymentInfo.status = "complete";
+    }
+
+    await order.save();
+
+    // Log order change
+    try {
+      const { logOrderChange } = await import("../utils/orderHistoryLogger.js");
+      await logOrderChange(
+        order._id,
+        "order",
+        { userId, role: userRole, name: req.user.name || "" },
+        "status",
+        oldStatus,
+        "received",
+        null,
+        `Order receipt confirmed by buyer. Payment completed.`
+      );
+    } catch (logError) {
+      console.warn("Failed to log order change:", logError);
+    }
+
+    // Send notification to seller
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      const sellerId = order.sellerId?._id || order.sellerId;
+      const sellerModel = order.sellerModel.toLowerCase();
+
+      if (sellerId) {
+        await createNotification(
+          sellerId,
+          sellerModel,
+          "order_received",
+          "Order Received",
+          `Order #${orderId} has been received and payment completed by the buyer.`,
+          {
+            relatedId: order._id,
+            relatedType: "order",
+            actionUrl: `/orders/${orderId}`,
+            priority: "medium",
+            sendEmail: true
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send order status notification:", notifError);
+    }
+
+    // Send email notification to seller
+    try {
+      let seller = null;
+      if (order.sellerModel === "Supplier") {
+        seller = await supplier.findById(order.sellerId);
+      } else if (order.sellerModel === "Farmer") {
+        seller = await farmer.findById(order.sellerId);
+      }
+
+      if (seller && seller.email) {
+        const emailSubject = "Order Received - Payment Completed";
+        const emailText = `Dear ${seller.name},\n\nThe buyer has confirmed receipt of order #${orderId}.\n\nPayment has been completed successfully.\n\nThank you!`;
+
+        await sendEmail(seller.email, emailSubject, emailText);
+      }
+    } catch (emailError) {
+      console.error("Failed to send order status email:", emailError);
+    }
+
+    // Populate order for response
+    const populatedOrder = await Order.findById(order._id)
+      .populate("userId", "name email phone address")
+      .populate("products.productId")
+      .populate("sellerId", "name email phone")
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      message: "Order receipt confirmed successfully. Payment completed.",
+      data: {
+        orderId: order._id,
+        trackingId: order.trackingId,
+        previousStatus: oldStatus,
+        currentStatus: "received",
+        receivedAt: order.receivedAt,
+        paymentStatus: "complete",
+        updatedAt: order.updatedAt,
+        order: populatedOrder
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Seller accepts order - changes status from pending to confirmed/processing
+ */
+export const acceptOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { estimatedDeliveryDate } = req.body;
+    const userRole = getRole(req).role;
+    const userId = req.user._id || req.user.id;
+
+    // Only sellers (farmer/supplier) can accept orders
+    if (userRole !== 'farmer' && userRole !== 'supplier') {
+      return next(new ErrorHandler(
+        "Only sellers (farmers/suppliers) can accept orders.",
+        403
+      ));
+    }
+
+    // Find order
+    const order = await Order.findById(orderId)
+      .populate("products.productId")
+      .populate("userId", "name email phone address")
+      .populate("sellerId", "name email");
+    
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
+    // Check if user is the seller of this order
+    const expectedModel = userRole === 'farmer' ? 'Farmer' : 'Supplier';
+    if (order.sellerId.toString() !== userId.toString() || order.sellerModel !== expectedModel) {
+      return next(new ErrorHandler("You don't have permission to accept this order.", 403));
+    }
+
+    // Check if order is in valid status
+    if (order.status !== 'pending') {
+      return next(new ErrorHandler(
+        `Cannot accept order. Order must be in "pending" status. Current status: "${order.status}"`,
+        400
+      ));
+    }
+
+    // Check if dispute is open
+    if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
+      return next(new ErrorHandler(
+        "Cannot accept order while dispute is open. Please resolve the dispute first.",
+        400
+      ));
+    }
+
+    // Update order status
+    const oldStatus = order.status;
+    order.status = "confirmed"; // Changed from pending to confirmed
+    
+    // Set estimated delivery date if provided
+    if (estimatedDeliveryDate) {
+      if (!order.deliveryInfo) {
+        order.deliveryInfo = {};
+      }
+      order.deliveryInfo.estimatedDeliveryDate = new Date(estimatedDeliveryDate);
+    }
+
+    await order.save();
+
+    // Log order change
+    try {
+      const { logOrderChange } = await import("../utils/orderHistoryLogger.js");
+      await logOrderChange(
+        order._id,
+        "order",
+        { userId, role: userRole, name: req.user.name || "" },
+        "status",
+        oldStatus,
+        "confirmed",
+        null,
+        `Order accepted by seller${estimatedDeliveryDate ? `. Estimated delivery: ${estimatedDeliveryDate}` : ''}`
+      );
+    } catch (logError) {
+      console.warn("Failed to log order change:", logError);
+    }
+
+    // Send notification to customer
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      const customerId = order.userId?._id || order.userId;
+      const customerRole = order.userRole || "buyer";
+
+      if (customerId) {
+        await createNotification(
+          customerId,
+          customerRole,
+          "order_accepted",
+          "Order Accepted",
+          `Your order #${orderId} has been accepted by the seller.`,
+          {
+            relatedId: order._id,
+            relatedType: "order",
+            actionUrl: `/orders/${orderId}`,
+            priority: "medium",
+            sendEmail: true
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send order status notification:", notifError);
+    }
+
+    // Send email notification to customer
+    try {
+      let customer = null;
+      if (order.userRole === "buyer") {
+        customer = await buyer.findById(order.userId);
+      } else if (order.userRole === "farmer") {
+        customer = await farmer.findById(order.userId);
+      }
+
+      if (customer && customer.email) {
+        const emailSubject = "Order Accepted";
+        const emailText = `Dear ${customer.name},\n\nYour order #${orderId} has been accepted by the seller.\n\n${estimatedDeliveryDate ? `Estimated delivery date: ${new Date(estimatedDeliveryDate).toLocaleDateString()}\n\n` : ''}Thank you!`;
+
+        await sendEmail(customer.email, emailSubject, emailText);
+      }
+    } catch (emailError) {
+      console.error("Failed to send order status email:", emailError);
+    }
+
+    // Populate order for response
+    const populatedOrder = await Order.findById(order._id)
+      .populate("userId", "name email phone address")
+      .populate("products.productId")
+      .populate("sellerId", "name email phone")
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      message: "Order accepted successfully",
+      order: populatedOrder
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Seller rejects order - changes status to canceled
+ */
+export const rejectOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+    const userRole = getRole(req).role;
+    const userId = req.user._id || req.user.id;
+
+    // Only sellers (farmer/supplier) can reject orders
+    if (userRole !== 'farmer' && userRole !== 'supplier') {
+      return next(new ErrorHandler(
+        "Only sellers (farmers/suppliers) can reject orders.",
+        403
+      ));
+    }
+
+    // Find order
+    const order = await Order.findById(orderId)
+      .populate("products.productId")
+      .populate("userId", "name email phone address")
+      .populate("sellerId", "name email");
+    
+    if (!order) {
+      return next(new ErrorHandler("Order not found", 404));
+    }
+
+    // Check if user is the seller of this order
+    const expectedModel = userRole === 'farmer' ? 'Farmer' : 'Supplier';
+    if (order.sellerId.toString() !== userId.toString() || order.sellerModel !== expectedModel) {
+      return next(new ErrorHandler("You don't have permission to reject this order.", 403));
+    }
+
+    // Check if order is in valid status
+    if (order.status !== 'pending') {
+      return next(new ErrorHandler(
+        `Cannot reject order. Order must be in "pending" status. Current status: "${order.status}"`,
+        400
+      ));
+    }
+
+    // Check if dispute is open
+    if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
+      return next(new ErrorHandler(
+        "Cannot reject order while dispute is open. Please resolve the dispute first.",
+        400
+      ));
+    }
+
+    // Update order status
+    const oldStatus = order.status;
+    order.status = "canceled";
+    
+    // Store rejection reason in deliveryInfo.notes if provided
+    if (reason) {
+      if (!order.deliveryInfo) {
+        order.deliveryInfo = {};
+      }
+      order.deliveryInfo.notes = `Order rejected by seller. Reason: ${reason}`;
+    }
+    
+    // Update payment status
+    order.payment_status = "cancelled";
+    if (order.paymentInfo) {
+      order.paymentInfo.status = "cancelled";
+    }
+
+    // Restore product quantities
+    try {
+      for (const productItem of order.products) {
+        const dbProduct = await product.findById(productItem.productId);
+        if (dbProduct) {
+          dbProduct.quantity += productItem.quantity;
+          await dbProduct.save();
+        }
+      }
+    } catch (restoreError) {
+      console.error("Error restoring product quantities:", restoreError);
+    }
+
+    await order.save();
+
+    // Log order change
+    try {
+      const { logOrderChange } = await import("../utils/orderHistoryLogger.js");
+      await logOrderChange(
+        order._id,
+        "order",
+        { userId, role: userRole, name: req.user.name || "" },
+        "status",
+        oldStatus,
+        "canceled",
+        null,
+        `Order rejected by seller. ${reason ? `Reason: ${reason}` : ''}`
+      );
+    } catch (logError) {
+      console.warn("Failed to log order change:", logError);
+    }
+
+    // Send notification to customer
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      const customerId = order.userId?._id || order.userId;
+      const customerRole = order.userRole || "buyer";
+
+      if (customerId) {
+        await createNotification(
+          customerId,
+          customerRole,
+          "order_rejected",
+          "Order Rejected",
+          `Your order #${orderId} has been rejected by the seller.${reason ? ` Reason: ${reason}` : ''}`,
+          {
+            relatedId: order._id,
+            relatedType: "order",
+            actionUrl: `/orders/${orderId}`,
+            priority: "high",
+            sendEmail: true
+          }
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send order status notification:", notifError);
+    }
+
+    // Send email notification to customer
+    try {
+      let customer = null;
+      if (order.userRole === "buyer") {
+        customer = await buyer.findById(order.userId);
+      } else if (order.userRole === "farmer") {
+        customer = await farmer.findById(order.userId);
+      }
+
+      if (customer && customer.email) {
+        const emailSubject = "Order Rejected";
+        const emailText = `Dear ${customer.name},\n\nYour order #${orderId} has been rejected by the seller.\n\n${reason ? `Reason: ${reason}\n\n` : ''}If you have any questions, please contact the seller.\n\nThank you!`;
+
+        await sendEmail(customer.email, emailSubject, emailText);
+      }
+    } catch (emailError) {
+      console.error("Failed to send order status email:", emailError);
+    }
+
+    // Populate order for response
+    const populatedOrder = await Order.findById(order._id)
+      .populate("userId", "name email phone address")
+      .populate("products.productId")
+      .populate("sellerId", "name email phone")
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      message: "Order rejected successfully",
+      order: populatedOrder
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const cancelOrder = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
     const order = await Order.findOne({ _id: orderId, userId });
     if (!order) return next(new ErrorHandler("Order not found", 404));
 
@@ -1128,7 +1586,7 @@ export const getAllOrders = async (req, res, next) => {
 export const getOrdersByGroup = async (req, res, next) => {
   try {
     const { orderGroupId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
     const userRole = getRole(req).role;
 
     if (!orderGroupId) {

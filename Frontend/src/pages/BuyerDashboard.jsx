@@ -126,7 +126,10 @@ function BuyerDashboard() {
         setDisputes([]);
       }
     } catch (error) {
-      console.error("Error fetching disputes:", error);
+      // Silently handle 404 (endpoint not implemented yet) or other errors
+      if (error.response?.status !== 404) {
+        console.warn("Error fetching disputes:", error.message);
+      }
       setDisputes([]);
     }
   };

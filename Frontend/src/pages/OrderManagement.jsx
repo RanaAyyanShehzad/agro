@@ -407,6 +407,7 @@ function OrderManagement() {
       // Make API call to update product status
       // productItemId should be the _id of the product item in the order's products array
       // Use the correct endpoint: PUT /api/v1/order/:orderId/product/:productId/status
+      // Note: This endpoint is registered via orderMultiVendorRoutes at /api/v1
       const url = `https://agrofarm-vd8i.onrender.com/api/v1/order/${orderId}/product/${productItemId}/status`;
 
       console.log("Updating product status:", {

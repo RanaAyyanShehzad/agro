@@ -21,11 +21,11 @@ function BuyerHeader({ sidebarOpen, setSidebarOpen }) {
     const fetchCartCount = async () => {
       try {
         const response = await axios.get(
-          "https://agrofarm-vd8i.onrender.com/api/v1/cart",
+          "https://agrofarm-vd8i.onrender.com/api/cart/my-cart",
           { withCredentials: true }
         );
         if (response.data.success && response.data.cart) {
-          setCartItemsCount(response.data.cart.items?.length || 0);
+          setCartItemsCount(response.data.cart.products?.length || 0);
         }
       } catch (error) {
         // Silently fail if cart endpoint is not available
