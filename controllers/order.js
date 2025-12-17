@@ -1496,7 +1496,10 @@ export const cancelOrder = async (req, res, next) => {
 
 export const getSupplierOrders = async (req, res, next) => {
   try {
-    const vendorId = req.user.id;
+    const vendorId = req.user._id || req.user.id;
+    if (!vendorId) {
+      return next(new ErrorHandler("User ID not found", 401));
+    }
     const userRole = getRole(req).role;
 
     // Only farmers and suppliers can access this
@@ -1933,22 +1936,44 @@ export const getSellerDisputes = async (req, res, next) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const disputes = await Dispute.find(filter)
-      .populate("orderId")
       .populate("buyerId", "name email phone")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
+    // Manually populate orderId to ensure it's properly populated with products
+    const disputesWithOrders = await Promise.all(
+      disputes.map(async (dispute) => {
+        if (dispute.orderId) {
+          try {
+            const orderId = dispute.orderId._id || dispute.orderId;
+            const order = await Order.findById(orderId)
+              .populate("products.productId", "name price images")
+              .populate("userId", "name email phone")
+              .populate("sellerId", "name email phone")
+              .lean();
+            if (order) {
+              dispute.orderId = order;
+            }
+          } catch (err) {
+            console.error("Error populating order for dispute:", err);
+            // Keep the original orderId if populate fails
+          }
+        }
+        return dispute;
+      })
+    );
+
     const total = await Dispute.countDocuments(filter);
 
     res.status(200).json({
       success: true,
-      count: disputes.length,
+      count: disputesWithOrders.length,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
-      disputes
+      disputes: disputesWithOrders
     });
   } catch (error) {
     next(error);

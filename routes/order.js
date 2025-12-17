@@ -35,6 +35,12 @@ router.use(isAuthenticated);
 router.post("/create", createOrder);
 
 /**
+ * POST /api/v1/order/place-order (alias for /create for backward compatibility)
+ * Create order from cart
+ */
+router.post("/place-order", createOrder);
+
+/**
  * GET /api/v1/order/my-orders
  * Get all orders for the authenticated user (buyer/farmer)
  */
