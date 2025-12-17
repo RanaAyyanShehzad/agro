@@ -53,28 +53,29 @@ router.get("/my-orders", getUserOrders);
 router.get("/user-orders", getUserOrders);
 
 /**
+ * PUT /api/v1/order/update-status/:orderId (alias for backward compatibility)
+ * Update order status (seller/admin only) - must come before /:orderId routes
+ */
+router.put("/update-status/:orderId", updateOrderStatus);
+
+/**
+ * PUT /api/v1/order/confirm-receipt/:orderId
+ * Confirm receipt (buyer only) - marks order as received and completes payment
+ * Must come before /:orderId routes
+ */
+router.put("/confirm-receipt/:orderId", confirmReceipt);
+
+/**
  * GET /api/v1/order/item/:orderId (alias for :orderId for backward compatibility)
  * Get order by ID - must come before /:orderId to match correctly
  */
 router.get("/item/:orderId", getOrderById);
 
 /**
- * GET /api/v1/order/:orderId
- * Get order by ID - must come after all specific routes
- */
-router.get("/:orderId", getOrderById);
-
-/**
  * PUT /api/v1/order/:orderId/status
  * Update order status (seller/admin only)
  */
 router.put("/:orderId/status", updateOrderStatus);
-
-/**
- * PUT /api/v1/order/update-status/:orderId (alias for backward compatibility)
- * Update order status (seller/admin only)
- */
-router.put("/update-status/:orderId", updateOrderStatus);
 
 /**
  * POST /api/v1/order/:orderId/out-for-delivery
@@ -89,10 +90,16 @@ router.post("/:orderId/out-for-delivery", markOutForDelivery);
 router.post("/:orderId/confirm-delivery", confirmDelivery);
 
 /**
- * PUT /api/v1/order/confirm-receipt/:orderId
- * Confirm receipt (buyer only) - marks order as received and completes payment
+ * POST /api/v1/order/:orderId/accept
+ * Accept order (seller only)
  */
-router.put("/confirm-receipt/:orderId", confirmReceipt);
+router.post("/:orderId/accept", acceptOrder);
+
+/**
+ * POST /api/v1/order/:orderId/reject
+ * Reject order (seller only)
+ */
+router.post("/:orderId/reject", rejectOrder);
 
 /**
  * PATCH /api/v1/order/:orderId/cancel
@@ -166,6 +173,12 @@ router.put("/dispute/:disputeId/resolve", resolveDispute);
  * Create dispute (buyer only) - must come after all /dispute/:disputeId/* routes
  */
 router.post("/dispute/:orderId", createDispute);
+
+/**
+ * GET /api/v1/order/:orderId
+ * Get order by ID - MUST be last to avoid matching specific routes like /supplier-orders, /disputes, etc.
+ */
+router.get("/:orderId", getOrderById);
 
 export default router;
 
