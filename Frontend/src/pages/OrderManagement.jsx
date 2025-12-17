@@ -263,15 +263,11 @@ function OrderManagement() {
     }
   };
 
-  // Check if order has pending products that need seller action
+  // Check if order is pending and needs seller action (accept/reject)
   const hasPendingProducts = (order) => {
-    if (!order.products || order.products.length === 0) return false;
-    return order.products.some(
-      (product) =>
-        product.status === "pending" &&
-        !product.sellerAccepted &&
-        !product.sellerRejectedAt
-    );
+    const orderStatus = (order.orderStatus || order.status || "").toLowerCase();
+    // Order is pending if status is "pending" - seller needs to accept or reject
+    return orderStatus === "pending";
   };
 
   // Mark order as Out for Delivery
@@ -334,17 +330,24 @@ function OrderManagement() {
     }
   };
 
-  // Validate status transition on frontend (additional validation)
+  // Validate status transition on frontend (must match backend allowedTransitions)
   const validateStatusTransition = (currentStatus, newStatus) => {
+    // Backend allowedTransitions from controllers/order.js:
+    // pending → confirmed, cancelled
+    // confirmed → processing, cancelled
+    // processing → shipped, cancelled
+    // shipped → out_for_delivery, cancelled (but out_for_delivery should use button, not dropdown)
+    // Note: delivered and received cannot be set by seller (buyer only)
     const validTransitions = {
+      pending: ["confirmed", "cancelled"],
       confirmed: ["processing", "cancelled"],
       processing: ["shipped", "cancelled"],
-      shipped: ["out_for_delivery", "cancelled"],
+      shipped: ["cancelled"], // out_for_delivery should use "Mark Out for Delivery" button, not dropdown
       out_for_delivery: [], // Cannot be changed by seller - buyer must confirm delivery
       delivered: [], // Cannot be changed by seller
       received: [], // Final status
       cancelled: [], // Final status
-      pending: ["confirmed", "cancelled"],
+      canceled: [], // Alias for cancelled
     };
 
     const current = (currentStatus || "").toLowerCase();
@@ -355,7 +358,7 @@ function OrderManagement() {
       return {
         valid: false,
         message: `Cannot change status from "${currentStatus}" to "${newStatus}". Allowed transitions: ${
-          allowed.join(", ") || "none"
+          allowed.join(", ") || "none (use accept/reject buttons for pending orders)"
         }`,
       };
     }
@@ -1737,6 +1740,7 @@ function OrderManagement() {
                                 <td className="px-4 py-4">
                                   {(() => {
                                     // Get valid next statuses based on current status
+                                    // Must match backend allowedTransitions in controllers/order.js
                                     const getValidNextStatuses = (
                                       currentStatus
                                     ) => {
@@ -1744,16 +1748,18 @@ function OrderManagement() {
                                         currentStatus || ""
                                       ).toLowerCase();
 
-                                      // Status flow according to API documentation:
-                                      // pending → confirmed → processing → shipped → out_for_delivery → delivered (by buyer) → received
-                                      // Status transitions validated by backend:
-                                      // - confirmed → processing, cancelled
-                                      // - processing → shipped, cancelled
-                                      // - shipped → out_for_delivery (seller marks with delivery details)
-                                      // - out_for_delivery → delivered (buyer confirms)
-                                      // - delivered, received, cancelled, pending (after acceptance) - cannot be changed by seller
+                                      // Backend allowedTransitions:
+                                      // pending → confirmed, cancelled (but use accept/reject buttons, not dropdown)
+                                      // confirmed → processing, cancelled
+                                      // processing → shipped, cancelled
+                                      // shipped → out_for_delivery (use "Mark Out for Delivery" button, not dropdown)
+                                      // out_for_delivery → [] (buyer must confirm delivery)
+                                      // delivered → [] (cannot be changed by seller)
+                                      // received → [] (final status)
+                                      // cancelled → [] (final status)
+                                      
                                       if (statusLower === "pending") {
-                                        // Pending orders should be accepted/rejected first, not status changed
+                                        // Pending orders should be accepted/rejected first, not status changed via dropdown
                                         return [];
                                       }
                                       if (statusLower === "confirmed") {
@@ -1763,12 +1769,26 @@ function OrderManagement() {
                                         return ["shipped", "cancelled"];
                                       }
                                       if (statusLower === "shipped") {
-                                        return []; // Seller must use "Mark Out for Delivery" button instead
+                                        // Seller must use "Mark Out for Delivery" button instead of dropdown
+                                        return [];
                                       }
                                       if (statusLower === "out_for_delivery") {
-                                        return []; // Cannot be changed by seller - buyer must confirm delivery
+                                        // Cannot be changed by seller - buyer must confirm delivery
+                                        return [];
                                       }
-                                      // delivered, received, cancelled - cannot be changed by seller
+                                      if (statusLower === "delivered") {
+                                        // Cannot be changed by seller
+                                        return [];
+                                      }
+                                      if (statusLower === "received") {
+                                        // Final status - cannot be changed
+                                        return [];
+                                      }
+                                      if (statusLower === "cancelled" || statusLower === "canceled") {
+                                        // Final status - cannot be changed
+                                        return [];
+                                      }
+                                      // Unknown status - no transitions allowed
                                       return [];
                                     };
 

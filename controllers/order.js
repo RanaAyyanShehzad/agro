@@ -331,9 +331,48 @@ export const getOrderById = async (req, res, next) => {
     const order = await Order.findById(orderId)
       .populate("products.productId")
       .populate("sellerId", "name email phone")
-      .populate("userId", "name email phone address");
+      .lean();
     
     if (!order) return next(new ErrorHandler("Order not found", 404));
+
+    // Manually populate userId based on userRole (buyer or farmer)
+    let customerInfo = {
+      name: "N/A",
+      email: "N/A",
+      phone: "N/A",
+      address: "N/A"
+    };
+
+    if (order.userId && order.userRole) {
+      try {
+        let customer = null;
+        if (order.userRole === "buyer") {
+          customer = await buyer.findById(order.userId).select("name email phone address").lean();
+        } else if (order.userRole === "farmer") {
+          customer = await farmer.findById(order.userId).select("name email phone address").lean();
+        }
+
+        if (customer) {
+          customerInfo = {
+            name: customer.name || "N/A",
+            email: customer.email || "N/A",
+            phone: customer.phone || order.shippingAddress?.phoneNumber || "N/A",
+            address: customer.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+          };
+        }
+      } catch (populateError) {
+        console.error("Error populating customer info:", populateError);
+        // Fallback to shipping address if available
+        if (order.shippingAddress) {
+          customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+          customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+        }
+      }
+    } else if (order.shippingAddress) {
+      // Fallback to shipping address if userId/userRole not available
+      customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+      customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+    }
 
     // If user is supplier/farmer, check if they are the seller of this order
     if (userRole === 'supplier' || userRole === 'farmer') {
@@ -347,13 +386,12 @@ export const getOrderById = async (req, res, next) => {
       return res.status(200).json({ 
         success: true, 
         order: {
-          ...order.toObject(),
-          customer: order.userId ? {
-            name: order.userId.name || "N/A",
-            email: order.userId.email || "N/A",
-            phone: order.userId.phone || order.shippingAddress?.phoneNumber || "N/A",
-            address: order.userId.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
-          } : null
+          ...order,
+          userId: order.userId ? {
+            _id: order.userId,
+            ...customerInfo
+          } : null,
+          customer: customerInfo
         }
       });
     }
@@ -363,7 +401,17 @@ export const getOrderById = async (req, res, next) => {
       return next(new ErrorHandler("Order not found", 404));
     }
 
-    res.status(200).json({ success: true, order });
+    res.status(200).json({ 
+      success: true, 
+      order: {
+        ...order,
+        userId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null,
+        customer: customerInfo
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -1278,15 +1326,58 @@ export const acceptOrder = async (req, res, next) => {
 
     // Populate order for response
     const populatedOrder = await Order.findById(order._id)
-      .populate("userId", "name email phone address")
       .populate("products.productId")
       .populate("sellerId", "name email phone")
       .lean();
 
+    // Manually populate userId based on userRole
+    let customerInfo = {
+      name: "N/A",
+      email: "N/A",
+      phone: "N/A",
+      address: "N/A"
+    };
+
+    if (populatedOrder.userId && populatedOrder.userRole) {
+      try {
+        let customer = null;
+        if (populatedOrder.userRole === "buyer") {
+          customer = await buyer.findById(populatedOrder.userId).select("name email phone address").lean();
+        } else if (populatedOrder.userRole === "farmer") {
+          customer = await farmer.findById(populatedOrder.userId).select("name email phone address").lean();
+        }
+
+        if (customer) {
+          customerInfo = {
+            name: customer.name || "N/A",
+            email: customer.email || "N/A",
+            phone: customer.phone || populatedOrder.shippingAddress?.phoneNumber || "N/A",
+            address: customer.address || `${populatedOrder.shippingAddress?.street || ""}, ${populatedOrder.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+          };
+        }
+      } catch (populateError) {
+        console.error("Error populating customer info:", populateError);
+        if (populatedOrder.shippingAddress) {
+          customerInfo.phone = populatedOrder.shippingAddress.phoneNumber || "N/A";
+          customerInfo.address = `${populatedOrder.shippingAddress.street || ""}, ${populatedOrder.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+        }
+      }
+    } else if (populatedOrder.shippingAddress) {
+      customerInfo.phone = populatedOrder.shippingAddress.phoneNumber || "N/A";
+      customerInfo.address = `${populatedOrder.shippingAddress.street || ""}, ${populatedOrder.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+    }
+
     res.status(200).json({
       success: true,
       message: "Order accepted successfully",
-      order: populatedOrder
+      order: {
+        ...populatedOrder,
+        userId: populatedOrder.userId ? {
+          _id: populatedOrder.userId,
+          ...customerInfo
+        } : null,
+        customer: customerInfo
+      }
     });
   } catch (error) {
     next(error);
@@ -1440,15 +1531,58 @@ export const rejectOrder = async (req, res, next) => {
 
     // Populate order for response
     const populatedOrder = await Order.findById(order._id)
-      .populate("userId", "name email phone address")
       .populate("products.productId")
       .populate("sellerId", "name email phone")
       .lean();
 
+    // Manually populate userId based on userRole
+    let customerInfo = {
+      name: "N/A",
+      email: "N/A",
+      phone: "N/A",
+      address: "N/A"
+    };
+
+    if (populatedOrder.userId && populatedOrder.userRole) {
+      try {
+        let customer = null;
+        if (populatedOrder.userRole === "buyer") {
+          customer = await buyer.findById(populatedOrder.userId).select("name email phone address").lean();
+        } else if (populatedOrder.userRole === "farmer") {
+          customer = await farmer.findById(populatedOrder.userId).select("name email phone address").lean();
+        }
+
+        if (customer) {
+          customerInfo = {
+            name: customer.name || "N/A",
+            email: customer.email || "N/A",
+            phone: customer.phone || populatedOrder.shippingAddress?.phoneNumber || "N/A",
+            address: customer.address || `${populatedOrder.shippingAddress?.street || ""}, ${populatedOrder.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+          };
+        }
+      } catch (populateError) {
+        console.error("Error populating customer info:", populateError);
+        if (populatedOrder.shippingAddress) {
+          customerInfo.phone = populatedOrder.shippingAddress.phoneNumber || "N/A";
+          customerInfo.address = `${populatedOrder.shippingAddress.street || ""}, ${populatedOrder.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+        }
+      }
+    } else if (populatedOrder.shippingAddress) {
+      customerInfo.phone = populatedOrder.shippingAddress.phoneNumber || "N/A";
+      customerInfo.address = `${populatedOrder.shippingAddress.street || ""}, ${populatedOrder.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+    }
+
     res.status(200).json({
       success: true,
       message: "Order rejected successfully",
-      order: populatedOrder
+      order: {
+        ...populatedOrder,
+        userId: populatedOrder.userId ? {
+          _id: populatedOrder.userId,
+          ...customerInfo
+        } : null,
+        customer: customerInfo
+      }
     });
   } catch (error) {
     next(error);
@@ -1513,24 +1647,58 @@ export const getSupplierOrders = async (req, res, next) => {
       sellerModel: userRole === "farmer" ? "Farmer" : "Supplier"
     })
       .populate("products.productId")
-      .populate("userId", "name email phone address")
       .sort({ createdAt: -1 })
       .lean();
 
-    // Format orders with customer information
-    const formattedOrders = orders.map(order => ({
-      ...order,
-      customer: order.userId ? {
-        name: order.userId.name || "N/A",
-        email: order.userId.email || "N/A",
-        phone: order.userId.phone || order.shippingAddress?.phoneNumber || "N/A",
-        address: order.userId.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
-      } : {
+    // Manually populate userId based on userRole (buyer or farmer)
+    // Since userId doesn't have ref/refPath, we need to populate manually
+    const formattedOrders = await Promise.all(orders.map(async (order) => {
+      let customerInfo = {
         name: "N/A",
         email: "N/A",
         phone: "N/A",
         address: "N/A"
+      };
+
+      if (order.userId && order.userRole) {
+        try {
+          let customer = null;
+          if (order.userRole === "buyer") {
+            customer = await buyer.findById(order.userId).select("name email phone address").lean();
+          } else if (order.userRole === "farmer") {
+            customer = await farmer.findById(order.userId).select("name email phone address").lean();
+          }
+
+          if (customer) {
+            customerInfo = {
+              name: customer.name || "N/A",
+              email: customer.email || "N/A",
+              phone: customer.phone || order.shippingAddress?.phoneNumber || "N/A",
+              address: customer.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+            };
+          }
+        } catch (populateError) {
+          console.error("Error populating customer info:", populateError);
+          // Fallback to shipping address if available
+          if (order.shippingAddress) {
+            customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+            customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+          }
+        }
+      } else if (order.shippingAddress) {
+        // Fallback to shipping address if userId/userRole not available
+        customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+        customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
       }
+
+      return {
+        ...order,
+        customer: customerInfo,
+        userId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null
+      };
     }));
 
     res.status(200).json({ 
@@ -1564,20 +1732,70 @@ export const getAllOrders = async (req, res, next) => {
     const orders = await Order.find(filter)
       .populate("products.productId")
       .populate("sellerId", "name email")
-      .populate("userId", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
+
+    // Manually populate userId based on userRole (buyer or farmer)
+    const populatedOrders = await Promise.all(orders.map(async (order) => {
+      let customerInfo = {
+        name: "N/A",
+        email: "N/A",
+        phone: "N/A",
+        address: "N/A"
+      };
+
+      if (order.userId && order.userRole) {
+        try {
+          let customer = null;
+          if (order.userRole === "buyer") {
+            customer = await buyer.findById(order.userId).select("name email phone address").lean();
+          } else if (order.userRole === "farmer") {
+            customer = await farmer.findById(order.userId).select("name email phone address").lean();
+          }
+
+          if (customer) {
+            customerInfo = {
+              name: customer.name || "N/A",
+              email: customer.email || "N/A",
+              phone: customer.phone || order.shippingAddress?.phoneNumber || "N/A",
+              address: customer.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+            };
+          }
+        } catch (populateError) {
+          console.error("Error populating customer info:", populateError);
+          // Fallback to shipping address if available
+          if (order.shippingAddress) {
+            customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+            customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+          }
+        }
+      } else if (order.shippingAddress) {
+        // Fallback to shipping address if userId/userRole not available
+        customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+        customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+      }
+
+      return {
+        ...order,
+        userId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null,
+        customer: customerInfo
+      };
+    }));
 
     const totalOrders = await Order.countDocuments(filter);
 
     res.status(200).json({
       success: true,
-      count: orders.length,
+      count: populatedOrders.length,
       totalOrders,
       totalPages: Math.ceil(totalOrders / parseInt(limit)),
       currentPage: parseInt(page),
-      orders
+      orders: populatedOrders
     });
   } catch (error) {
     next(error);
@@ -1601,8 +1819,8 @@ export const getOrdersByGroup = async (req, res, next) => {
     const orders = await Order.find({ orderGroupId })
       .populate("products.productId")
       .populate("sellerId", "name email phone")
-      .populate("userId", "name email phone address")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     if (orders.length === 0) {
       return next(new ErrorHandler("No orders found for this group", 404));
@@ -1616,9 +1834,57 @@ export const getOrdersByGroup = async (req, res, next) => {
       }
     }
 
+    // Manually populate userId for each order based on userRole
+    const populatedOrders = await Promise.all(orders.map(async (order) => {
+      let customerInfo = {
+        name: "N/A",
+        email: "N/A",
+        phone: "N/A",
+        address: "N/A"
+      };
+
+      if (order.userId && order.userRole) {
+        try {
+          let customer = null;
+          if (order.userRole === "buyer") {
+            customer = await buyer.findById(order.userId).select("name email phone address").lean();
+          } else if (order.userRole === "farmer") {
+            customer = await farmer.findById(order.userId).select("name email phone address").lean();
+          }
+
+          if (customer) {
+            customerInfo = {
+              name: customer.name || "N/A",
+              email: customer.email || "N/A",
+              phone: customer.phone || order.shippingAddress?.phoneNumber || "N/A",
+              address: customer.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+            };
+          }
+        } catch (populateError) {
+          console.error("Error populating customer info:", populateError);
+          if (order.shippingAddress) {
+            customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+            customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+          }
+        }
+      } else if (order.shippingAddress) {
+        customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+        customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+      }
+
+      return {
+        ...order,
+        userId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null,
+        customer: customerInfo
+      };
+    }));
+
     // Calculate totals
-    const totalPrice = orders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
-    const allStatuses = orders.map(o => o.status);
+    const totalPrice = populatedOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
+    const allStatuses = populatedOrders.map(o => o.status);
     const uniqueStatuses = [...new Set(allStatuses)];
 
     // Determine overall status
@@ -1638,10 +1904,10 @@ export const getOrdersByGroup = async (req, res, next) => {
     res.status(200).json({
       success: true,
       orderGroupId: orderGroupId,
-      count: orders.length,
+      count: populatedOrders.length,
       totalPrice: totalPrice,
       overallStatus: overallStatus,
-      orders: orders,
+      orders: populatedOrders,
       summary: {
         byStatus: uniqueStatuses.reduce((acc, status) => {
           acc[status] = allStatuses.filter(s => s === status).length;
