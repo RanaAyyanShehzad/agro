@@ -1050,18 +1050,70 @@ export const getAllOrdersAdmin = async (req, res, next) => {
 
       const oldOrders = await Order.find(oldOrderFilter)
         .populate("products.productId")
-        .populate("userId", "name email phone address")
         .sort({ createdAt: -1 })
         .skip(orderType === "all" ? skip : 0)
         .limit(orderType === "all" ? parseInt(limit) : 1000)
         .lean();
 
-      allOrders.push(...oldOrders.map(order => ({
-        ...order,
-        orderType: "old",
-        customerId: order.userId,
-        customerModel: order.userRole === "buyer" ? "Buyer" : "Farmer"
-      })));
+      // Manually populate userId based on userRole (buyer or farmer)
+      const populatedOldOrders = await Promise.all(oldOrders.map(async (order) => {
+        let customerInfo = {
+          name: "N/A",
+          email: "N/A",
+          phone: "N/A",
+          address: "N/A"
+        };
+
+        if (order.userId && order.userRole) {
+          try {
+            let customer = null;
+            if (order.userRole === "buyer") {
+              customer = await buyer.findById(order.userId).select("name email phone address").lean();
+            } else if (order.userRole === "farmer") {
+              customer = await farmer.findById(order.userId).select("name email phone address").lean();
+            }
+
+            if (customer) {
+              customerInfo = {
+                name: customer.name || "N/A",
+                email: customer.email || "N/A",
+                phone: customer.phone || order.shippingAddress?.phoneNumber || "N/A",
+                address: customer.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+              };
+            }
+          } catch (populateError) {
+            console.error("Error populating customer info:", populateError);
+            if (order.shippingAddress) {
+              customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+              customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+            }
+          }
+        } else if (order.shippingAddress) {
+          customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+          customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+        }
+
+        return {
+          ...order,
+          orderType: "old",
+          userId: order.userId ? {
+            _id: order.userId,
+            ...customerInfo
+          } : null,
+          customerId: order.userId ? {
+            _id: order.userId,
+            ...customerInfo
+          } : null,
+          buyerId: order.userId ? {
+            _id: order.userId,
+            ...customerInfo
+          } : null,
+          customer: customerInfo,
+          customerModel: order.userRole === "buyer" ? "Buyer" : "Farmer"
+        };
+      }));
+
+      allOrders.push(...populatedOldOrders);
     }
 
     // Sort all orders by creation date
@@ -1115,18 +1167,67 @@ export const getOrderByIdAdmin = async (req, res, next) => {
     // Try old Order model
     order = await Order.findById(orderId)
       .populate("products.productId")
-      .populate("userId", "name email phone address");
+      .lean();
 
     if (!order) {
       return next(new ErrorHandler("Order not found", 404));
     }
 
+    // Manually populate userId based on userRole (buyer or farmer)
+    let customerInfo = {
+      name: "N/A",
+      email: "N/A",
+      phone: "N/A",
+      address: "N/A"
+    };
+
+    if (order.userId && order.userRole) {
+      try {
+        let customer = null;
+        if (order.userRole === "buyer") {
+          customer = await buyer.findById(order.userId).select("name email phone address").lean();
+        } else if (order.userRole === "farmer") {
+          customer = await farmer.findById(order.userId).select("name email phone address").lean();
+        }
+
+        if (customer) {
+          customerInfo = {
+            name: customer.name || "N/A",
+            email: customer.email || "N/A",
+            phone: customer.phone || order.shippingAddress?.phoneNumber || "N/A",
+            address: customer.address || `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A"
+          };
+        }
+      } catch (populateError) {
+        console.error("Error populating customer info:", populateError);
+        if (order.shippingAddress) {
+          customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+          customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+        }
+      }
+    } else if (order.shippingAddress) {
+      customerInfo.phone = order.shippingAddress.phoneNumber || "N/A";
+      customerInfo.address = `${order.shippingAddress.street || ""}, ${order.shippingAddress.city || ""}`.replace(/^,\s*|,\s*$/g, "") || "N/A";
+    }
+
     res.status(200).json({
       success: true,
       order: {
-        ...order.toObject(),
+        ...order,
         orderType: "old",
-        customerId: order.userId,
+        userId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null,
+        customerId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null,
+        buyerId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null,
+        customer: customerInfo,
         customerModel: order.userRole === "buyer" ? "Buyer" : "Farmer"
       }
     });
@@ -1755,8 +1856,7 @@ export const adminChangeOrderStatus = async (req, res, next) => {
       customer = await farmer.findById(customerId);
     }
     if (customer) {
-      // FIX 1: Construct the notification type dynamically
-      // Map 'canceled' to 'order_cancelled'
+      
       const notificationType = status === 'canceled' || status === 'cancelled'
           ? 'order_cancelled' 
           : `order_${status}`; 

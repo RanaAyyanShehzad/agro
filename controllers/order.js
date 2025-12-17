@@ -1219,7 +1219,6 @@ export const acceptOrder = async (req, res, next) => {
     // Find order
     const order = await Order.findById(orderId)
       .populate("products.productId")
-      .populate("userId", "name email phone address")
       .populate("sellerId", "name email");
     
     if (!order) {
@@ -1227,8 +1226,11 @@ export const acceptOrder = async (req, res, next) => {
     }
 
     // Check if user is the seller of this order
+    // Handle both populated and non-populated sellerId
+    const sellerIdValue = order.sellerId?._id || order.sellerId;
     const expectedModel = userRole === 'farmer' ? 'Farmer' : 'Supplier';
-    if (order.sellerId.toString() !== userId.toString() || order.sellerModel !== expectedModel) {
+    
+    if (!sellerIdValue || sellerIdValue.toString() !== userId.toString() || order.sellerModel !== expectedModel) {
       return next(new ErrorHandler("You don't have permission to accept this order.", 403));
     }
 
@@ -1405,7 +1407,6 @@ export const rejectOrder = async (req, res, next) => {
     // Find order
     const order = await Order.findById(orderId)
       .populate("products.productId")
-      .populate("userId", "name email phone address")
       .populate("sellerId", "name email");
     
     if (!order) {
@@ -1413,8 +1414,11 @@ export const rejectOrder = async (req, res, next) => {
     }
 
     // Check if user is the seller of this order
+    // Handle both populated and non-populated sellerId
+    const sellerIdValue = order.sellerId?._id || order.sellerId;
     const expectedModel = userRole === 'farmer' ? 'Farmer' : 'Supplier';
-    if (order.sellerId.toString() !== userId.toString() || order.sellerModel !== expectedModel) {
+    
+    if (!sellerIdValue || sellerIdValue.toString() !== userId.toString() || order.sellerModel !== expectedModel) {
       return next(new ErrorHandler("You don't have permission to reject this order.", 403));
     }
 
@@ -1783,7 +1787,16 @@ export const getAllOrders = async (req, res, next) => {
           _id: order.userId,
           ...customerInfo
         } : null,
-        customer: customerInfo
+        customer: customerInfo,
+        // Add customerId and buyerId for frontend compatibility (admin portal expects these)
+        customerId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null,
+        buyerId: order.userId ? {
+          _id: order.userId,
+          ...customerInfo
+        } : null
       };
     }));
 
