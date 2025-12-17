@@ -1917,6 +1917,9 @@ export const getBuyerDisputes = async (req, res, next) => {
 export const getSellerDisputes = async (req, res, next) => {
   try {
     const userId = req.user._id || req.user.id;
+    if (!userId) {
+      return next(new ErrorHandler("User ID not found", 401));
+    }
     const userRole = getRole(req).role;
     const { status, page = 1, limit = 50 } = req.query;
 
@@ -1927,7 +1930,7 @@ export const getSellerDisputes = async (req, res, next) => {
 
     const sellerRole = userRole;
     const filter = { 
-      sellerId: userId,
+      sellerId: mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId,
       sellerRole: sellerRole
     };
     if (status && status !== "all") {
@@ -1945,22 +1948,60 @@ export const getSellerDisputes = async (req, res, next) => {
     // Manually populate orderId to ensure it's properly populated with products
     const disputesWithOrders = await Promise.all(
       disputes.map(async (dispute) => {
-        if (dispute.orderId) {
-          try {
-            const orderId = dispute.orderId._id || dispute.orderId;
-            const order = await Order.findById(orderId)
-              .populate("products.productId", "name price images")
-              .populate("userId", "name email phone")
-              .populate("sellerId", "name email phone")
-              .lean();
-            if (order) {
-              dispute.orderId = order;
-            }
-          } catch (err) {
-            console.error("Error populating order for dispute:", err);
-            // Keep the original orderId if populate fails
-          }
+        if (!dispute.orderId) {
+          return dispute;
         }
+        
+        try {
+          // Handle both ObjectId and populated object cases
+          let orderId;
+          
+          // Check if it's already a populated order object with products
+          if (dispute.orderId && typeof dispute.orderId === 'object' && Array.isArray(dispute.orderId.products)) {
+            // Already fully populated, return as is
+            return dispute;
+          }
+          
+          // Extract the orderId - with .lean(), ObjectIds are returned as objects with _id property
+          if (typeof dispute.orderId === 'object' && dispute.orderId !== null) {
+            // Check if it has _id property (from .lean() ObjectId conversion)
+            if (dispute.orderId._id) {
+              orderId = dispute.orderId._id.toString ? dispute.orderId._id.toString() : String(dispute.orderId._id);
+            } else if (dispute.orderId.toString && typeof dispute.orderId.toString === 'function') {
+              // It's a Mongoose ObjectId instance, convert to string
+              orderId = dispute.orderId.toString();
+            } else {
+              // Try to get _id from the object
+              orderId = String(dispute.orderId._id || dispute.orderId);
+            }
+          } else {
+            // It's already a string or primitive
+            orderId = String(dispute.orderId);
+          }
+          
+          // Validate ObjectId format
+          if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+            console.warn(`Invalid orderId format for dispute ${dispute._id}: ${orderId}`);
+            return dispute;
+          }
+          
+          // Fetch and populate the order
+          const order = await Order.findById(orderId)
+            .populate("products.productId", "name price images")
+            .populate("userId", "name email phone")
+            .populate("sellerId", "name email phone")
+            .lean();
+            
+          if (order) {
+            dispute.orderId = order;
+          } else {
+            console.warn(`Order not found for dispute ${dispute._id}: orderId ${orderId}`);
+          }
+        } catch (err) {
+          console.error(`Error populating order for dispute ${dispute._id}:`, err.message || err);
+          // Keep the original orderId if populate fails
+        }
+        
         return dispute;
       })
     );
@@ -2030,7 +2071,8 @@ export const respondToDispute = async (req, res, next) => {
     dispute.status = "pending_admin_review";
 
     // Update order dispute status
-    const order = await Order.findById(dispute.orderId);
+    const orderId = dispute.orderId?._id || dispute.orderId?.toString() || dispute.orderId;
+    const order = await Order.findById(orderId);
     if (order) {
       order.dispute_status = "pending_admin_review";
       await order.save();
@@ -2118,7 +2160,8 @@ export const adminRuling = async (req, res, next) => {
     dispute.resolvedAt = new Date();
 
     // Update order dispute status
-    const order = await Order.findById(dispute.orderId);
+    const orderId = dispute.orderId?._id || dispute.orderId?.toString() || dispute.orderId;
+    const order = await Order.findById(orderId);
     if (order) {
       order.dispute_status = "closed";
       await order.save();
@@ -2231,7 +2274,8 @@ export const resolveDispute = async (req, res, next) => {
       dispute.resolvedAt = new Date();
 
       // Update order dispute status
-      const order = await Order.findById(dispute.orderId);
+      const orderId = dispute.orderId?._id || dispute.orderId?.toString() || dispute.orderId;
+      const order = await Order.findById(orderId);
       if (order) {
         order.dispute_status = "closed";
         await order.save();

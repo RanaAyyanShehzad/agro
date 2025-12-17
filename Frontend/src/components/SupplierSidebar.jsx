@@ -104,10 +104,10 @@ function SupplierSidebar({ sidebarOpen, setSidebarOpen }) {
 
         {/* Navigation */}
         <div className="px-3 py-4 space-y-2">
-          <p className="text-xs font-bold text-yellow-300 uppercase tracking-wider px-3 mb-3 flex items-center gap-2">
+          <div className="text-xs font-bold text-yellow-300 uppercase tracking-wider px-3 mb-3 flex items-center gap-2">
             <div className="w-1 h-4 bg-yellow-400 rounded-full"></div>
             {t("nav.section.main")}
-          </p>
+          </div>
           <NavItem to="" icon="grid" active={location.pathname === "/"}>
             {t("nav.dashboard")}
           </NavItem>
@@ -134,10 +134,10 @@ function SupplierSidebar({ sidebarOpen, setSidebarOpen }) {
           </NavItem>
          
 
-          <p className="text-xs font-bold text-yellow-300 uppercase tracking-wider px-3 mt-6 mb-3 flex items-center gap-2">
+          <div className="text-xs font-bold text-yellow-300 uppercase tracking-wider px-3 mt-6 mb-3 flex items-center gap-2">
             <div className="w-1 h-4 bg-yellow-400 rounded-full"></div>
             {t("nav.section.other")}
-          </p>
+          </div>
 
           <NavItem
             to="profile"
