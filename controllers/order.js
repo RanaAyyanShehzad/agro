@@ -493,10 +493,26 @@ export const updateOrderStatus = async (req, res, next) => {
     };
 
     // Check if transition is allowed (using normalized lowercase statuses)
-    const allowedNextStatuses = allowedTransitions[currentStatus] || [];
-    if (!allowedNextStatuses.includes(newStatusLower)) {
+    // Trim and normalize to handle any whitespace issues
+    const normalizedCurrentStatus = currentStatus.trim();
+    const normalizedNewStatus = newStatusLower.trim();
+    
+    const allowedNextStatuses = allowedTransitions[normalizedCurrentStatus] || [];
+    
+    // Debug logging
+    console.log("Status transition check:", {
+      originalStatus: order.status,
+      normalizedCurrentStatus,
+      requestedStatus: status,
+      normalizedNewStatus,
+      allowedNextStatuses,
+      hasTransition: allowedNextStatuses.includes(normalizedNewStatus)
+    });
+    
+    if (!allowedNextStatuses.includes(normalizedNewStatus)) {
       return next(new ErrorHandler(
         `Cannot change status from "${order.status}" to "${status}". ` +
+        `Current normalized status: "${normalizedCurrentStatus}". ` +
         `Allowed transitions: ${allowedNextStatuses.length > 0 ? allowedNextStatuses.join(", ") : "none"}`,
         400
       ));
@@ -540,11 +556,11 @@ export const updateOrderStatus = async (req, res, next) => {
 
     // Update order status (use normalized lowercase status)
     const oldStatus = order.status;
-    order.status = newStatusLower;
+    order.status = normalizedNewStatus;
     
     // Handle status-specific timestamps and data
     const now = new Date();
-    if (newStatusLower === 'shipped') {
+    if (normalizedNewStatus === 'shipped') {
       order.shippedAt = now;
       if (!order.expected_delivery_date) {
         const expectedDate = new Date();
@@ -553,7 +569,7 @@ export const updateOrderStatus = async (req, res, next) => {
       }
     }
     
-    if (newStatusLower === 'out_for_delivery') {
+    if (normalizedNewStatus === 'out_for_delivery') {
       order.outForDeliveryAt = now;
       // Generate tracking ID if not already set
       if (!order.trackingId) {
@@ -567,7 +583,7 @@ export const updateOrderStatus = async (req, res, next) => {
       }
     }
     
-    if (newStatusLower === 'delivered') {
+    if (normalizedNewStatus === 'delivered') {
       order.deliveredAt = now;
       if (order.deliveryInfo) {
         order.deliveryInfo.actualDeliveryDate = now;
@@ -600,13 +616,13 @@ export const updateOrderStatus = async (req, res, next) => {
       const customerId = order.userId?._id || order.userId;
       const customerRole = order.userRole || "buyer";
 
-      if (customerId && (newStatusLower === "shipped" || newStatusLower === "out_for_delivery" || newStatusLower === "delivered")) {
+      if (customerId && (normalizedNewStatus === "shipped" || normalizedNewStatus === "out_for_delivery" || normalizedNewStatus === "delivered")) {
         let notificationType, title, message;
-        if (newStatusLower === "shipped") {
+        if (normalizedNewStatus === "shipped") {
           notificationType = "order_shipped";
           title = "Order Shipped";
           message = `Your order #${orderId} has been shipped and is on its way.`;
-        } else if (newStatusLower === "out_for_delivery") {
+        } else if (normalizedNewStatus === "out_for_delivery") {
           notificationType = "order_out_for_delivery";
           title = "Order Out for Delivery";
           message = `Your order #${orderId} is out for delivery. Tracking ID: ${order.trackingId || 'N/A'}`;
@@ -656,9 +672,9 @@ export const updateOrderStatus = async (req, res, next) => {
           canceled: "Your order has been cancelled."
         };
 
-        const statusMessage = statusMessages[newStatusLower] || `Your order status has been updated to ${newStatusLower}.`;
-        const emailSubject = `Order Status Update - ${newStatusLower.charAt(0).toUpperCase() + newStatusLower.slice(1)}`;
-        const emailText = `Dear ${customer.name},\n\nYour order #${orderId} status has been updated from "${oldStatus}" to "${newStatusLower}".\n\n${statusMessage}\n\nThank you for shopping with us!`;
+        const statusMessage = statusMessages[normalizedNewStatus] || `Your order status has been updated to ${normalizedNewStatus}.`;
+        const emailSubject = `Order Status Update - ${normalizedNewStatus.charAt(0).toUpperCase() + normalizedNewStatus.slice(1)}`;
+        const emailText = `Dear ${customer.name},\n\nYour order #${orderId} status has been updated from "${oldStatus}" to "${normalizedNewStatus}".\n\n${statusMessage}\n\nThank you for shopping with us!`;
 
         await sendEmail(customer.email, emailSubject, emailText);
       }
@@ -676,18 +692,18 @@ export const updateOrderStatus = async (req, res, next) => {
     // Return comprehensive response
     res.status(200).json({
       success: true,
-      message: `Order status updated successfully from "${oldStatus}" to "${newStatusLower}"`,
+      message: `Order status updated successfully from "${oldStatus}" to "${normalizedNewStatus}"`,
       data: {
         orderId: order._id,
         previousStatus: oldStatus,
-        currentStatus: newStatusLower,
+        currentStatus: normalizedNewStatus,
         updatedAt: order.updatedAt,
         order: populatedOrder
       },
       metadata: {
         statusTransition: {
           from: oldStatus,
-          to: newStatusLower,
+          to: normalizedNewStatus,
           timestamp: new Date().toISOString()
         },
         authorizedBy: {

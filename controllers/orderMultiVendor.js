@@ -29,31 +29,33 @@ export const updateProductStatus = async (req, res, next) => {
       ));
     }
 
-    // Validate status
-    const validStatuses = ["processing", "shipped", "delivered", "cancelled"];
+    // Validate status - include out_for_delivery in valid statuses
+    const validStatuses = ["pending", "processing", "shipped", "out_for_delivery", "delivered", "received", "cancelled"];
     if (!status || !validStatuses.includes(status)) {
       return next(new ErrorHandler(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400));
     }
 
-    // Validate status transitions - enforce proper flow: confirmed → processing → shipped → delivered
+    // Validate status transitions - enforce proper flow: pending → processing → shipped → out_for_delivery → delivered → received
     // For old Order model, product status is at order level, not product level
     const currentProductStatus = isMultiVendor ? (productItem?.status || order.orderStatus) : order.status;
+    const normalizedCurrentStatus = (currentProductStatus || "").toLowerCase().trim();
+    const normalizedNewStatus = (status || "").toLowerCase().trim();
     
-    // Define allowed transitions
+    // Define allowed transitions (matching Order model flow)
     const allowedTransitions = {
-      "pending": ["cancelled"], // Can only cancel from pending
-      "confirmed": ["processing", "cancelled"], // Can go to processing or cancel
+      "pending": ["processing", "cancelled"], // Accept changes to processing, reject changes to cancelled
       "processing": ["shipped", "cancelled"], // Can go to shipped or cancel
-      "shipped": ["delivered"], // Can only go to delivered
+      "shipped": ["out_for_delivery", "cancelled"], // Can go to out_for_delivery or cancel
+      "out_for_delivery": [], // Cannot change from out_for_delivery - buyer must confirm delivery
       "delivered": [], // Cannot change from delivered (buyer must confirm)
       "received": [], // Cannot change from received
-      "rejected": [], // Cannot change from rejected
-      "cancelled": [] // Cannot change from cancelled
+      "cancelled": [], // Cannot change from cancelled
+      "canceled": [] // Alias for cancelled
     };
 
-    // Check if transition is allowed
-    const allowedNextStatuses = allowedTransitions[currentProductStatus] || [];
-    if (!allowedNextStatuses.includes(status)) {
+    // Check if transition is allowed (using normalized statuses)
+    const allowedNextStatuses = allowedTransitions[normalizedCurrentStatus] || [];
+    if (!allowedNextStatuses.includes(normalizedNewStatus)) {
       return next(new ErrorHandler(
         `Cannot change status from "${currentProductStatus}" to "${status}". ` +
         `Allowed transitions: ${allowedNextStatuses.length > 0 ? allowedNextStatuses.join(", ") : "none"}`,
@@ -61,57 +63,63 @@ export const updateProductStatus = async (req, res, next) => {
       ));
     }
 
-    // Prevent status reversals - once delivered, cannot go back
-    if (currentProductStatus === "delivered" || currentProductStatus === "received") {
+    // Prevent status reversals - once delivered or received, cannot go back
+    if (normalizedCurrentStatus === "delivered" || normalizedCurrentStatus === "received") {
       return next(new ErrorHandler(
         `Cannot change status. Order is already ${currentProductStatus}. Status cannot be reversed.`,
         400
       ));
     }
 
-    // Specific validations for each transition
-    if (status === "processing" && currentProductStatus !== "confirmed") {
+    // Specific validations for each transition (using normalized statuses)
+    if (normalizedNewStatus === "processing" && normalizedCurrentStatus !== "pending") {
       return next(new ErrorHandler(
-        `Cannot change to processing. Product must be in "confirmed" status. Current status: "${currentProductStatus}"`,
+        `Cannot change to processing. Product must be in "pending" status. Current status: "${currentProductStatus}"`,
         400
       ));
     }
 
-    if (status === "shipped" && currentProductStatus !== "processing") {
+    if (normalizedNewStatus === "shipped" && normalizedCurrentStatus !== "processing") {
       return next(new ErrorHandler(
         `Cannot change to shipped. Product must be in "processing" status. Current status: "${currentProductStatus}"`,
         400
       ));
     }
 
-    if (status === "delivered" && currentProductStatus !== "shipped") {
+    if (normalizedNewStatus === "out_for_delivery" && normalizedCurrentStatus !== "shipped") {
       return next(new ErrorHandler(
-        `Cannot change to delivered. Product must be in "shipped" status. Current status: "${currentProductStatus}"`,
+        `Cannot change to out_for_delivery. Product must be in "shipped" status. Current status: "${currentProductStatus}"`,
         400
       ));
     }
 
-    // Time validation: Cannot mark as "delivered" immediately after "shipped"
-    if (status === "delivered") {
-      if (currentProductStatus !== "shipped") {
+    // Prevent seller from directly marking as "delivered" - only buyer can confirm delivery
+    if (normalizedNewStatus === "delivered") {
+      const userRole = getRole(req).role;
+      if (userRole === 'farmer' || userRole === 'supplier') {
         return next(new ErrorHandler(
-          `Cannot mark as delivered. Product must be in "shipped" status first.`,
+          "Sellers cannot mark orders as 'delivered'. Only buyers can confirm delivery after receiving the order.",
+          403
+        ));
+      }
+      if (normalizedCurrentStatus !== "out_for_delivery") {
+        return next(new ErrorHandler(
+          `Cannot mark as delivered. Product must be in "out_for_delivery" status first. Current status: "${currentProductStatus}"`,
           400
         ));
       }
+    }
 
-      // Check if product was shipped (only for multi-vendor orders)
-      if (isMultiVendor && productItem && !productItem.shippedAt) {
-        return next(new ErrorHandler(
-          "Product shipped timestamp not found. Cannot mark as delivered.",
-          400
-        ));
-      }
+    // Time validation: Cannot mark as "delivered" immediately after "out_for_delivery"
+    if (normalizedNewStatus === "delivered") {
+      // Check if order was out for delivery (not shipped)
+      const outForDeliveryAt = isMultiVendor && productItem?.outForDeliveryAt 
+        ? productItem.outForDeliveryAt 
+        : order.outForDeliveryAt;
       
-      // For old Order model, check order-level shippedAt
-      if (!isMultiVendor && !order.shippedAt) {
+      if (!outForDeliveryAt) {
         return next(new ErrorHandler(
-          "Order shipped timestamp not found. Cannot mark as delivered.",
+          "Order out for delivery timestamp not found. Cannot mark as delivered.",
           400
         ));
       }
@@ -123,26 +131,23 @@ export const updateProductStatus = async (req, res, next) => {
       const minMinutes = config?.configValue || 10; // Default 10 minutes
 
       const now = new Date();
-      const shippedAt = isMultiVendor && productItem?.shippedAt 
-        ? productItem.shippedAt 
-        : order.shippedAt;
-      const timeDiff = (now - new Date(shippedAt)) / (1000 * 60); // minutes
+      const timeDiff = (now - new Date(outForDeliveryAt)) / (1000 * 60); // minutes
 
       if (timeDiff < minMinutes) {
         const remainingMinutes = Math.ceil(minMinutes - timeDiff);
         return next(new ErrorHandler(
-          `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after shipping.`,
+          `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after out for delivery.`,
           400
         ));
       }
     }
 
-    // Update product status
+    // Update product status (use normalized status)
     if (isMultiVendor && productItem) {
-      productItem.status = status;
+      productItem.status = normalizedNewStatus;
       
       // Handle shipped status - set timestamps
-      if (status === 'shipped') {
+      if (normalizedNewStatus === 'shipped') {
         productItem.shippedAt = new Date();
         // Use estimated delivery date from product if available, otherwise set default
         if (!order.expected_delivery_date) {
@@ -156,7 +161,23 @@ export const updateProductStatus = async (req, res, next) => {
         }
       }
       
-      if (status === 'delivered') {
+      // Handle out_for_delivery status - set timestamp and generate tracking ID
+      if (normalizedNewStatus === 'out_for_delivery') {
+        productItem.outForDeliveryAt = new Date();
+        // Generate tracking ID if not already set at order level
+        if (!order.trackingId) {
+          const { generateTrackingId } = await import("../utils/orderHelpers.js");
+          let trackingId = generateTrackingId();
+          let existingOrder = await Order.findOne({ trackingId });
+          while (existingOrder) {
+            trackingId = generateTrackingId();
+            existingOrder = await Order.findOne({ trackingId });
+          }
+          order.trackingId = trackingId;
+        }
+      }
+      
+      if (normalizedNewStatus === 'delivered') {
         productItem.deliveredAt = new Date();
       }
     }
@@ -169,8 +190,24 @@ export const updateProductStatus = async (req, res, next) => {
       order.orderStatus = calculateOrderStatus(order);
     } else {
       oldOrderStatus = order.status;
-      // For old Order model, update status directly
-      order.status = status;
+      // For old Order model, update status directly (use normalized status)
+      order.status = normalizedNewStatus;
+      
+      // Handle out_for_delivery status - set timestamp and generate tracking ID
+      if (normalizedNewStatus === 'out_for_delivery') {
+        order.outForDeliveryAt = new Date();
+        // Generate tracking ID if not already set
+        if (!order.trackingId) {
+          const { generateTrackingId } = await import("../utils/orderHelpers.js");
+          let trackingId = generateTrackingId();
+          let existingOrder = await Order.findOne({ trackingId });
+          while (existingOrder) {
+            trackingId = generateTrackingId();
+            existingOrder = await Order.findOne({ trackingId });
+          }
+          order.trackingId = trackingId;
+        }
+      }
     }
 
     // Set order-level timestamps
