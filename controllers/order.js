@@ -10,6 +10,7 @@ import { supplier } from '../models/supplier.js';
 import { product } from '../models/products.js';
 import { calculateOrderStatus, generateTrackingId } from '../utils/orderHelpers.js';
 import { Dispute } from '../models/dispute.js';
+import { SystemConfig, CONFIG_KEYS } from '../models/systemConfig.js';
 
 const getRole = (req) => {
   const { token } = req.cookies;
@@ -480,43 +481,12 @@ export const updateOrderStatus = async (req, res, next) => {
       ));
     }
 
-    // Define allowed transitions (all lowercase for consistent comparison)
-    const allowedTransitions = {
-      "pending": ["processing", "cancelled"], // Accept changes to processing, reject changes to cancelled
-      "processing": ["shipped", "cancelled"],
-      "shipped": ["out_for_delivery", "cancelled"],
-      "out_for_delivery": [], // Cannot change from out_for_delivery - buyer must confirm delivery
-      "delivered": [], // Cannot change from delivered (buyer must confirm)
-      "received": [], // Cannot change from received
-      "cancelled": [], // Cannot change from cancelled
-      "canceled": [] // Alias for cancelled
-    };
-
-    // Check if transition is allowed (using normalized lowercase statuses)
     // Trim and normalize to handle any whitespace issues
     const normalizedCurrentStatus = currentStatus.trim();
     const normalizedNewStatus = newStatusLower.trim();
     
-    const allowedNextStatuses = allowedTransitions[normalizedCurrentStatus] || [];
-    
-    // Debug logging
-    console.log("Status transition check:", {
-      originalStatus: order.status,
-      normalizedCurrentStatus,
-      requestedStatus: status,
-      normalizedNewStatus,
-      allowedNextStatuses,
-      hasTransition: allowedNextStatuses.includes(normalizedNewStatus)
-    });
-    
-    if (!allowedNextStatuses.includes(normalizedNewStatus)) {
-      return next(new ErrorHandler(
-        `Cannot change status from "${order.status}" to "${status}". ` +
-        `Current normalized status: "${normalizedCurrentStatus}". ` +
-        `Allowed transitions: ${allowedNextStatuses.length > 0 ? allowedNextStatuses.join(", ") : "none"}`,
-        400
-      ));
-    }
+    // NOTE: Allowed transitions check removed - any status transition is now allowed
+    // This allows flexibility in status management
 
     // Check authorization - only sellers (farmer/supplier) or admin can update status
     let isAuthorized = false;
@@ -552,23 +522,25 @@ export const updateOrderStatus = async (req, res, next) => {
       ));
     }
 
-    // Time validation for delivered status (only for buyer confirmation)
-    if (status === "delivered") {
-      if (currentStatus !== "out_for_delivery") {
-        return next(new ErrorHandler(
-          `Cannot mark as delivered. Order must be in "out_for_delivery" status. Current status: "${currentStatus}"`,
-          400
-        ));
-      }
+    // Time validation: Optional check if out_for_delivery timestamp exists
+    // If timestamp exists, enforce minimum time requirement
+    if (normalizedNewStatus === "delivered" && order.outForDeliveryAt) {
+      const config = await SystemConfig.findOne({
+        configKey: CONFIG_KEYS.OUT_FOR_DELIVERY_TO_DELIVERED_MINUTES
+      });
+      const minMinutes = config?.configValue || 1; // Default 1 minute for testing
+      const now = new Date();
+      const timeDiff = (now - new Date(order.outForDeliveryAt)) / (1000 * 60); // minutes
 
-      // Check if order was marked out for delivery
-      if (!order.outForDeliveryAt) {
+      if (timeDiff < minMinutes) {
+        const remainingMinutes = Math.ceil(minMinutes - timeDiff);
         return next(new ErrorHandler(
-          "Order out for delivery timestamp not found. Cannot mark as delivered.",
+          `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after being out for delivery.`,
           400
         ));
       }
     }
+    // If outForDeliveryAt doesn't exist, allow the transition (flexible status management)
 
     // Update order status (use normalized lowercase status)
     const oldStatus = order.status;

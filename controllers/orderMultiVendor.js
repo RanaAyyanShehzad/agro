@@ -41,54 +41,13 @@ export const updateProductStatus = async (req, res, next) => {
     const normalizedCurrentStatus = (currentProductStatus || "").toLowerCase().trim();
     const normalizedNewStatus = (status || "").toLowerCase().trim();
     
-    // Define allowed transitions (matching Order model flow)
-    const allowedTransitions = {
-      "pending": ["processing", "cancelled"], // Accept changes to processing, reject changes to cancelled
-      "processing": ["shipped", "cancelled"], // Can go to shipped or cancel
-      "shipped": ["out_for_delivery", "cancelled"], // Can go to out_for_delivery or cancel
-      "out_for_delivery": [], // Cannot change from out_for_delivery - buyer must confirm delivery
-      "delivered": [], // Cannot change from delivered (buyer must confirm)
-      "received": [], // Cannot change from received
-      "cancelled": [], // Cannot change from cancelled
-      "canceled": [] // Alias for cancelled
-    };
-
-    // Check if transition is allowed (using normalized statuses)
-    const allowedNextStatuses = allowedTransitions[normalizedCurrentStatus] || [];
-    if (!allowedNextStatuses.includes(normalizedNewStatus)) {
-      return next(new ErrorHandler(
-        `Cannot change status from "${currentProductStatus}" to "${status}". ` +
-        `Allowed transitions: ${allowedNextStatuses.length > 0 ? allowedNextStatuses.join(", ") : "none"}`,
-        400
-      ));
-    }
+    // NOTE: Allowed transitions check removed - any status transition is now allowed
+    // This allows flexibility in status management
 
     // Prevent status reversals - once delivered or received, cannot go back
     if (normalizedCurrentStatus === "delivered" || normalizedCurrentStatus === "received") {
       return next(new ErrorHandler(
         `Cannot change status. Order is already ${currentProductStatus}. Status cannot be reversed.`,
-        400
-      ));
-    }
-
-    // Specific validations for each transition (using normalized statuses)
-    if (normalizedNewStatus === "processing" && normalizedCurrentStatus !== "pending") {
-      return next(new ErrorHandler(
-        `Cannot change to processing. Product must be in "pending" status. Current status: "${currentProductStatus}"`,
-        400
-      ));
-    }
-
-    if (normalizedNewStatus === "shipped" && normalizedCurrentStatus !== "processing") {
-      return next(new ErrorHandler(
-        `Cannot change to shipped. Product must be in "processing" status. Current status: "${currentProductStatus}"`,
-        400
-      ));
-    }
-
-    if (normalizedNewStatus === "out_for_delivery" && normalizedCurrentStatus !== "shipped") {
-      return next(new ErrorHandler(
-        `Cannot change to out_for_delivery. Product must be in "shipped" status. Current status: "${currentProductStatus}"`,
         400
       ));
     }
@@ -102,44 +61,35 @@ export const updateProductStatus = async (req, res, next) => {
           403
         ));
       }
-      if (normalizedCurrentStatus !== "out_for_delivery") {
-        return next(new ErrorHandler(
-          `Cannot mark as delivered. Product must be in "out_for_delivery" status first. Current status: "${currentProductStatus}"`,
-          400
-        ));
-      }
     }
 
-    // Time validation: Cannot mark as "delivered" immediately after "out_for_delivery"
+    // Time validation: Optional check if out_for_delivery timestamp exists
+    // If timestamp exists, enforce minimum time requirement
     if (normalizedNewStatus === "delivered") {
-      // Check if order was out for delivery (not shipped)
       const outForDeliveryAt = isMultiVendor && productItem?.outForDeliveryAt 
         ? productItem.outForDeliveryAt 
         : order.outForDeliveryAt;
       
-      if (!outForDeliveryAt) {
-        return next(new ErrorHandler(
-          "Order out for delivery timestamp not found. Cannot mark as delivered.",
-          400
-        ));
+      // Only enforce time validation if out_for_delivery timestamp exists
+      if (outForDeliveryAt) {
+        // Get configuration for minimum time
+        const config = await SystemConfig.findOne({ 
+          configKey: CONFIG_KEYS.SHIPPED_TO_DELIVERED_MINUTES 
+        });
+        const minMinutes = config?.configValue || 10; // Default 10 minutes
+
+        const now = new Date();
+        const timeDiff = (now - new Date(outForDeliveryAt)) / (1000 * 60); // minutes
+
+        if (timeDiff < minMinutes) {
+          const remainingMinutes = Math.ceil(minMinutes - timeDiff);
+          return next(new ErrorHandler(
+            `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after out for delivery.`,
+            400
+          ));
+        }
       }
-
-      // Get configuration for minimum time
-      const config = await SystemConfig.findOne({ 
-        configKey: CONFIG_KEYS.SHIPPED_TO_DELIVERED_MINUTES 
-      });
-      const minMinutes = config?.configValue || 10; // Default 10 minutes
-
-      const now = new Date();
-      const timeDiff = (now - new Date(outForDeliveryAt)) / (1000 * 60); // minutes
-
-      if (timeDiff < minMinutes) {
-        const remainingMinutes = Math.ceil(minMinutes - timeDiff);
-        return next(new ErrorHandler(
-          `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after out for delivery.`,
-          400
-        ));
-      }
+      // If outForDeliveryAt doesn't exist, allow the transition (flexible status management)
     }
 
     // Update product status (use normalized status)
