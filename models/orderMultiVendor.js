@@ -31,7 +31,7 @@ const productItemSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["pending", "processing", "confirmed", "shipped", "delivered", "received", "cancelled", "rejected"],
+    enum: ["pending", "processing", "confirmed", "shipped", "out_for_delivery", "delivered", "received", "cancelled", "rejected"],
     default: "pending"
   },
   sellerAccepted: {
@@ -51,6 +51,9 @@ const productItemSchema = new mongoose.Schema({
   },
   // Per-product timestamps (for multi-vendor orders)
   shippedAt: {
+    type: Date
+  },
+  outForDeliveryAt: {
     type: Date
   },
   deliveredAt: {
@@ -89,6 +92,7 @@ const orderSchema = new mongoose.Schema({
       "processing",
       "confirmed",
       "shipped",
+      "out_for_delivery",
       "delivered",
       "received",
       "cancelled",
@@ -106,6 +110,16 @@ const orderSchema = new mongoose.Schema({
   // Timestamp when order was shipped
   shippedAt: {
     type: Date
+  },
+  // Timestamp when order is out for delivery
+  outForDeliveryAt: {
+    type: Date
+  },
+  // Tracking ID for logistics
+  trackingId: {
+    type: String,
+    unique: true,
+    sparse: true
   },
   // Timestamp when order was delivered
   deliveredAt: {
@@ -206,6 +220,35 @@ const orderSchema = new mongoose.Schema({
     actualDeliveryDate: {
       type: Date,
       default: null
+    },
+    vehicle: {
+      name: {
+        type: String,
+        default: null
+      },
+      registrationNumber: {
+        type: String,
+        default: null
+      },
+      vehicleType: {
+        type: String,
+        enum: ["Motorcycle", "Car", "Van", "Truck", "Rickshaw", "Other"],
+        default: null
+      },
+      contactInfo: {
+        type: String,
+        default: null
+      }
+    },
+    rider: {
+      name: {
+        type: String,
+        default: null
+      },
+      contactInfo: {
+        type: String,
+        default: null
+      }
     },
     notes: {
       type: String,

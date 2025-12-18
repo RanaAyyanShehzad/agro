@@ -524,8 +524,24 @@ export const updateOrderStatus = async (req, res, next) => {
       isAuthorized = true;
     } else if (userRole === 'farmer' || userRole === 'supplier') {
       // Check if user is the seller of this order
+      // Handle both populated and non-populated sellerId
+      const sellerIdValue = order.sellerId?._id || order.sellerId;
       const expectedModel = userRole === 'farmer' ? 'Farmer' : 'Supplier';
-      isAuthorized = order.sellerId.toString() === userId.toString() && 
+      
+      // Debug logging
+      console.log("Authorization check:", {
+        userRole,
+        userId: userId.toString(),
+        sellerIdValue: sellerIdValue?.toString(),
+        orderSellerId: order.sellerId,
+        orderSellerModel: order.sellerModel,
+        expectedModel,
+        sellerIdMatch: sellerIdValue?.toString() === userId.toString(),
+        modelMatch: order.sellerModel === expectedModel
+      });
+      
+      isAuthorized = sellerIdValue && 
+                     sellerIdValue.toString() === userId.toString() && 
                      order.sellerModel === expectedModel;
     }
 
