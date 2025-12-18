@@ -443,8 +443,9 @@ export const updateOrderStatus = async (req, res, next) => {
       return next(new ErrorHandler("Order not found", 404));
     }
 
-    // Get current status
-    const currentStatus = order.status;
+    // Get current status and normalize to lowercase for comparison
+    const currentStatus = (order.status || "").toLowerCase();
+    const newStatusLower = (status || "").toLowerCase();
 
     // Check if dispute is open - cannot update status if dispute exists
     if (order.dispute_status === "open" || order.dispute_status === "pending_admin_review") {
@@ -457,14 +458,14 @@ export const updateOrderStatus = async (req, res, next) => {
     // Prevent status updates if order is canceled or received
     if (currentStatus === 'canceled' || currentStatus === 'cancelled' || currentStatus === 'received') {
       return next(new ErrorHandler(
-        `Cannot update status of an order that is ${currentStatus}. Status cannot be changed.`,
+        `Cannot update status of an order that is ${order.status}. Status cannot be changed.`,
         400
       ));
     }
 
     // Validate status transitions
     const validStatuses = ["pending", "processing", "shipped", "out_for_delivery", "delivered", "received", "cancelled"];
-    if (!validStatuses.includes(status)) {
+    if (!validStatuses.includes(newStatusLower)) {
       return next(new ErrorHandler(
         `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
         400
@@ -472,14 +473,14 @@ export const updateOrderStatus = async (req, res, next) => {
     }
 
     // Prevent seller from directly marking as "delivered" - only buyer can confirm delivery
-    if (status === "delivered" && (userRole === 'farmer' || userRole === 'supplier')) {
+    if (newStatusLower === "delivered" && (userRole === 'farmer' || userRole === 'supplier')) {
       return next(new ErrorHandler(
         "Sellers cannot mark orders as 'delivered'. Only buyers can confirm delivery after receiving the order.",
         403
       ));
     }
 
-    // Define allowed transitions
+    // Define allowed transitions (all lowercase for consistent comparison)
     const allowedTransitions = {
       "pending": ["processing", "cancelled"], // Accept changes to processing, reject changes to cancelled
       "processing": ["shipped", "cancelled"],
@@ -487,14 +488,15 @@ export const updateOrderStatus = async (req, res, next) => {
       "out_for_delivery": [], // Cannot change from out_for_delivery - buyer must confirm delivery
       "delivered": [], // Cannot change from delivered (buyer must confirm)
       "received": [], // Cannot change from received
-      "cancelled": [] // Cannot change from cancelled
+      "cancelled": [], // Cannot change from cancelled
+      "canceled": [] // Alias for cancelled
     };
 
-    // Check if transition is allowed
+    // Check if transition is allowed (using normalized lowercase statuses)
     const allowedNextStatuses = allowedTransitions[currentStatus] || [];
-    if (!allowedNextStatuses.includes(status)) {
+    if (!allowedNextStatuses.includes(newStatusLower)) {
       return next(new ErrorHandler(
-        `Cannot change status from "${currentStatus}" to "${status}". ` +
+        `Cannot change status from "${order.status}" to "${status}". ` +
         `Allowed transitions: ${allowedNextStatuses.length > 0 ? allowedNextStatuses.join(", ") : "none"}`,
         400
       ));
@@ -536,13 +538,13 @@ export const updateOrderStatus = async (req, res, next) => {
       }
     }
 
-    // Update order status
-    const oldStatus = currentStatus;
-    order.status = status;
+    // Update order status (use normalized lowercase status)
+    const oldStatus = order.status;
+    order.status = newStatusLower;
     
     // Handle status-specific timestamps and data
     const now = new Date();
-    if (status === 'shipped') {
+    if (newStatusLower === 'shipped') {
       order.shippedAt = now;
       if (!order.expected_delivery_date) {
         const expectedDate = new Date();
@@ -551,7 +553,7 @@ export const updateOrderStatus = async (req, res, next) => {
       }
     }
     
-    if (status === 'out_for_delivery') {
+    if (newStatusLower === 'out_for_delivery') {
       order.outForDeliveryAt = now;
       // Generate tracking ID if not already set
       if (!order.trackingId) {
@@ -565,7 +567,7 @@ export const updateOrderStatus = async (req, res, next) => {
       }
     }
     
-    if (status === 'delivered') {
+    if (newStatusLower === 'delivered') {
       order.deliveredAt = now;
       if (order.deliveryInfo) {
         order.deliveryInfo.actualDeliveryDate = now;
@@ -598,13 +600,13 @@ export const updateOrderStatus = async (req, res, next) => {
       const customerId = order.userId?._id || order.userId;
       const customerRole = order.userRole || "buyer";
 
-      if (customerId && (status === "shipped" || status === "out_for_delivery" || status === "delivered")) {
+      if (customerId && (newStatusLower === "shipped" || newStatusLower === "out_for_delivery" || newStatusLower === "delivered")) {
         let notificationType, title, message;
-        if (status === "shipped") {
+        if (newStatusLower === "shipped") {
           notificationType = "order_shipped";
           title = "Order Shipped";
           message = `Your order #${orderId} has been shipped and is on its way.`;
-        } else if (status === "out_for_delivery") {
+        } else if (newStatusLower === "out_for_delivery") {
           notificationType = "order_out_for_delivery";
           title = "Order Out for Delivery";
           message = `Your order #${orderId} is out for delivery. Tracking ID: ${order.trackingId || 'N/A'}`;
@@ -645,17 +647,18 @@ export const updateOrderStatus = async (req, res, next) => {
       if (customer && customer.email) {
         const statusMessages = {
           pending: "Your order is pending confirmation.",
-          confirmed: "Your order has been confirmed by the seller.",
           processing: "Your order is being processed and prepared for shipment.",
           shipped: "Your order has been shipped and is on its way to you.",
           out_for_delivery: `Your order is out for delivery. Tracking ID: ${order.trackingId || 'N/A'}`,
           delivered: "Your order has been delivered successfully. Please confirm receipt.",
-          cancelled: "Your order has been cancelled."
+          received: "Your order has been received and payment is complete.",
+          cancelled: "Your order has been cancelled.",
+          canceled: "Your order has been cancelled."
         };
 
-        const statusMessage = statusMessages[status] || `Your order status has been updated to ${status}.`;
-        const emailSubject = `Order Status Update - ${status.charAt(0).toUpperCase() + status.slice(1)}`;
-        const emailText = `Dear ${customer.name},\n\nYour order #${orderId} status has been updated from "${oldStatus}" to "${status}".\n\n${statusMessage}\n\nThank you for shopping with us!`;
+        const statusMessage = statusMessages[newStatusLower] || `Your order status has been updated to ${newStatusLower}.`;
+        const emailSubject = `Order Status Update - ${newStatusLower.charAt(0).toUpperCase() + newStatusLower.slice(1)}`;
+        const emailText = `Dear ${customer.name},\n\nYour order #${orderId} status has been updated from "${oldStatus}" to "${newStatusLower}".\n\n${statusMessage}\n\nThank you for shopping with us!`;
 
         await sendEmail(customer.email, emailSubject, emailText);
       }
@@ -673,18 +676,18 @@ export const updateOrderStatus = async (req, res, next) => {
     // Return comprehensive response
     res.status(200).json({
       success: true,
-      message: `Order status updated successfully from "${oldStatus}" to "${status}"`,
+      message: `Order status updated successfully from "${oldStatus}" to "${newStatusLower}"`,
       data: {
         orderId: order._id,
         previousStatus: oldStatus,
-        currentStatus: status,
+        currentStatus: newStatusLower,
         updatedAt: order.updatedAt,
         order: populatedOrder
       },
       metadata: {
         statusTransition: {
           from: oldStatus,
-          to: status,
+          to: newStatusLower,
           timestamp: new Date().toISOString()
         },
         authorizedBy: {

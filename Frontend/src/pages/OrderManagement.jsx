@@ -390,11 +390,12 @@ function OrderManagement() {
         return;
       }
 
-      // Get current product status for validation
-      const currentProduct = selectedOrder?.products?.find(
-        (p) => p._id === productItemId
-      );
-      const currentStatus = currentProduct?.status;
+      // Check if order has product-level status (OrderMultiVendor) or order-level status (Order)
+      // Order model doesn't have product-level status, so use order status
+      const hasProductLevelStatus = selectedOrder?.products?.some(p => p.status !== undefined);
+      const currentStatus = hasProductLevelStatus 
+        ? (selectedOrder?.products?.find(p => p._id === productItemId)?.status)
+        : (selectedOrder?.status || selectedOrder?.orderStatus || "pending");
 
       // Validate status transition on frontend
       if (currentStatus) {
@@ -405,17 +406,23 @@ function OrderManagement() {
         }
       }
 
-      // Make API call to update product status
-      // productItemId should be the _id of the product item in the order's products array
-      // Use the correct endpoint: PUT /api/v1/order/:orderId/product/:productId/status
-      // Note: This endpoint is registered via orderMultiVendorRoutes at /api/v1
-      const url = `https://agrofarm-vd8i.onrender.com/api/v1/order/${orderId}/product/${productItemId}/status`;
+      // Determine which endpoint to use based on order type
+      let url;
+      if (hasProductLevelStatus) {
+        // OrderMultiVendor - update product-level status
+        url = `https://agrofarm-vd8i.onrender.com/api/v1/order/${orderId}/product/${productItemId}/status`;
+      } else {
+        // Order model - update order-level status (all products share the same status)
+        url = `https://agrofarm-vd8i.onrender.com/api/v1/order/${orderId}/status`;
+      }
 
-      console.log("Updating product status:", {
+      console.log("Updating status:", {
         orderId,
         productItemId,
         newStatus,
         url,
+        hasProductLevelStatus,
+        currentStatus
       });
 
       const response = await fetch(url, {
@@ -501,7 +508,7 @@ function OrderManagement() {
       }
 
       toast.success(
-        responseData.message || "Product status updated successfully"
+        responseData.message || (hasProductLevelStatus ? "Product status updated successfully" : "Order status updated successfully")
       );
 
       // Update selected order with the response data
@@ -1720,7 +1727,9 @@ function OrderManagement() {
                         <tbody className="divide-y divide-gray-200">
                           {selectedOrder.products.map((item, index) => {
                             const product = item.productId || item;
-                            const productStatus = item.status || "processing";
+                            // Use order-level status since Order model doesn't have product-level status
+                            // Products in an order share the same status (the order status)
+                            const productStatus = item.status || selectedOrder.status || selectedOrder.orderStatus || "pending";
                             const vendorName =
                               item.farmerId?.name ||
                               item.supplierId?.name ||
