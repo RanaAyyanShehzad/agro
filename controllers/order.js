@@ -2082,10 +2082,14 @@ export const createDispute = async (req, res, next) => {
       console.error("[DISPUTE] Failed to lookup product owner:", productLookupError);
     }
 
+    // Determine buyer role
+    const buyerRole = order.userRole || userRole;
+
     // Create dispute
     const dispute = await Dispute.create({
       orderId: order._id,
       buyerId: userId,
+      buyerRole: buyerRole,
       sellerId: sellerId,
       sellerRole: sellerRole,
       productId: productId,
@@ -2105,20 +2109,17 @@ export const createDispute = async (req, res, next) => {
     order.dispute_status = "open";
     await order.save();
 
-    // Send notification to product owner (farmer/supplier) if different from order seller
+    // Send notification to seller (farmer/supplier) about dispute
     try {
       const { createNotification } = await import("../utils/notifications.js");
       
-      // Notify actual product owner
-      const productOwnerId = productOwner?.id || sellerId;
-      const productOwnerRole = productOwner?.role || sellerRole;
-      
+      // Notify seller
       await createNotification(
-        productOwnerId,
-        productOwnerRole,
+        sellerId,
+        sellerRole,
         "dispute_created",
         "New Dispute Created",
-        `A dispute has been created for order #${orderId} regarding a product. Please respond to resolve it.`,
+        `A buyer has created a dispute for order #${orderId}. Please respond to the dispute with your proposal.`,
         {
           relatedId: dispute._id,
           relatedType: "dispute",
@@ -2127,9 +2128,9 @@ export const createDispute = async (req, res, next) => {
           sendEmail: true
         }
       );
-      console.log(`[DISPUTE] Product owner (${productOwnerRole}) ${productOwnerId} notified about dispute ${dispute._id}`);
+      console.log(`[DISPUTE] Seller (${sellerRole}) ${sellerId} notified about dispute ${dispute._id}`);
     } catch (notifError) {
-      console.error("[DISPUTE ERROR] Failed to send product owner notification:", notifError);
+      console.error("[DISPUTE ERROR] Failed to send seller notification:", notifError);
     }
 
     // Notify buyer (confirmation)
@@ -2186,8 +2187,6 @@ export const getDisputeById = async (req, res, next) => {
     // Find dispute
     const dispute = await Dispute.findById(disputeId)
       .populate("orderId")
-      .populate("buyerId", "name email phone")
-      .populate("sellerId", "name email phone")
       .populate("adminRuling.adminId", "name email")
       .lean();
     
@@ -2196,9 +2195,6 @@ export const getDisputeById = async (req, res, next) => {
     }
 
     // Check if user has permission to view this dispute
-    // Buyers can view disputes where they are the buyer
-    // Sellers can view disputes where they are the seller
-    // Admins can view any dispute
     const isBuyer = (userRole === 'buyer' || userRole === 'farmer') && 
                     dispute.buyerId.toString() === userId.toString();
     const isSeller = (userRole === 'farmer' || userRole === 'supplier') && 
@@ -2207,6 +2203,40 @@ export const getDisputeById = async (req, res, next) => {
 
     if (!isBuyer && !isSeller && !isAdmin) {
       return next(new ErrorHandler("You don't have permission to view this dispute.", 403));
+    }
+
+    // Manually populate buyer info based on buyerRole
+    let buyerInfo = { _id: dispute.buyerId, name: "N/A", email: "N/A", phone: "N/A" };
+    try {
+      const buyerModel = dispute.buyerRole === "buyer" ? buyer : farmer;
+      const buyerData = await buyerModel.findById(dispute.buyerId).select("name email phone").lean();
+      if (buyerData) {
+        buyerInfo = {
+          _id: dispute.buyerId,
+          name: buyerData.name || "N/A",
+          email: buyerData.email || "N/A",
+          phone: buyerData.phone || "N/A"
+        };
+      }
+    } catch (buyerError) {
+      console.error("Error fetching buyer info:", buyerError);
+    }
+
+    // Manually populate seller info
+    let sellerInfo = { _id: dispute.sellerId, name: "N/A", email: "N/A", phone: "N/A" };
+    try {
+      const sellerModel = dispute.sellerRole === "farmer" ? farmer : supplier;
+      const sellerData = await sellerModel.findById(dispute.sellerId).select("name email phone").lean();
+      if (sellerData) {
+        sellerInfo = {
+          _id: dispute.sellerId,
+          name: sellerData.name || "N/A",
+          email: sellerData.email || "N/A",
+          phone: sellerData.phone || "N/A"
+        };
+      }
+    } catch (sellerError) {
+      console.error("Error fetching seller info:", sellerError);
     }
 
     // Manually populate orderId if it's not already populated
@@ -2221,7 +2251,11 @@ export const getDisputeById = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      dispute
+      dispute: {
+        ...dispute,
+        buyerId: buyerInfo,
+        sellerId: sellerInfo
+      }
     });
   } catch (error) {
     next(error);
@@ -2251,21 +2285,43 @@ export const getBuyerDisputes = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const disputes = await Dispute.find(filter)
       .populate("orderId")
-      .populate("sellerId", "name email phone")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
+    // Manually populate seller info
+    const populatedDisputes = await Promise.all(
+      disputes.map(async (dispute) => {
+        let sellerInfo = { _id: dispute.sellerId, name: "Unknown", email: "N/A", phone: "N/A" };
+        try {
+          const sellerModel = dispute.sellerRole === "farmer" ? farmer : supplier;
+          const sellerData = await sellerModel.findById(dispute.sellerId).select("name email phone").lean();
+          if (sellerData) {
+            sellerInfo = {
+              _id: dispute.sellerId,
+              name: sellerData.name || "Unknown",
+              email: sellerData.email || "N/A",
+              phone: sellerData.phone || "N/A"
+            };
+          }
+        } catch (sellerError) {
+          console.error("Error fetching seller info for dispute:", sellerError);
+        }
+        dispute.sellerId = sellerInfo;
+        return dispute;
+      })
+    );
+
     const total = await Dispute.countDocuments(filter);
 
     res.status(200).json({
       success: true,
-      count: disputes.length,
+      count: populatedDisputes.length,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / parseInt(limit)),
-      disputes
+      disputes: populatedDisputes
     });
   } catch (error) {
     next(error);
@@ -2301,15 +2357,33 @@ export const getSellerDisputes = async (req, res, next) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const disputes = await Dispute.find(filter)
-      .populate("buyerId", "name email phone")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    // Manually populate orderId to ensure it's properly populated with products
+    // Manually populate orderId and buyer info
     const disputesWithOrders = await Promise.all(
       disputes.map(async (dispute) => {
+        // Populate buyer info
+        let buyerInfo = { _id: dispute.buyerId, name: "Unknown", email: "N/A", phone: "N/A" };
+        try {
+          const buyerModel = dispute.buyerRole === "buyer" ? buyer : farmer;
+          const buyerData = await buyerModel.findById(dispute.buyerId).select("name email phone").lean();
+          if (buyerData) {
+            buyerInfo = {
+              _id: dispute.buyerId,
+              name: buyerData.name || "Unknown",
+              email: buyerData.email || "N/A",
+              phone: buyerData.phone || "N/A"
+            };
+          }
+        } catch (buyerError) {
+          console.error("Error fetching buyer info for dispute:", buyerError);
+        }
+        dispute.buyerId = buyerInfo;
+
+        // Populate order
         if (!dispute.orderId) {
           return dispute;
         }
@@ -2447,9 +2521,10 @@ export const respondToDispute = async (req, res, next) => {
     // Send notification to buyer
     try {
       const { createNotification } = await import("../utils/notifications.js");
+      const buyerRole = dispute.buyerRole || "buyer";
       await createNotification(
         dispute.buyerId,
-        "buyer",
+        buyerRole,
         "dispute_response",
         "Seller Responded to Dispute",
         `The seller has responded to your dispute for order #${dispute.orderId}. Please review their proposal.`,

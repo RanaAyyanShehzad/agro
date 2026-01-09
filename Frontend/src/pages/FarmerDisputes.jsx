@@ -235,11 +235,11 @@ function FarmerDisputes() {
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Buyer</p>
                       <p className="text-sm font-medium text-gray-900">
-                        {dispute.orderId?.customerId?.name || "Unknown Buyer"}
+                        {dispute.buyerId?.name || "Unknown Buyer"}
                       </p>
-                      {dispute.orderId?.customerId?.email && (
+                      {dispute.buyerId?.email && (
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {dispute.orderId.customerId.email}
+                          {dispute.buyerId.email}
                         </p>
                       )}
                     </div>
