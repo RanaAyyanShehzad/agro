@@ -23,6 +23,8 @@ function AdminDisputeManagement() {
   const [selectedDispute, setSelectedDispute] = useState(null);
   const [showRulingModal, setShowRulingModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [notifyPayload, setNotifyPayload] = useState({ target: 'both', title: '', message: '', sendEmail: true });
   const [ruling, setRuling] = useState({ decision: "", notes: "" });
   const [fullDisputeDetails, setFullDisputeDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -125,6 +127,7 @@ function AdminDisputeManagement() {
   const getStatusBadge = (status) => {
     const statusConfig = {
       open: { bg: "bg-yellow-100", text: "text-yellow-800", icon: Clock },
+      seller_responded: { bg: "bg-blue-100", text: "text-blue-800", icon: CheckCircle },
       pending_admin_review: {
         bg: "bg-orange-100",
         text: "text-orange-800",
@@ -182,6 +185,7 @@ function AdminDisputeManagement() {
             <option value="all">All Status</option>
             <option value="open">Open</option>
             <option value="pending_admin_review">Pending Review</option>
+            <option value="seller_responded">Seller Responded</option>
             <option value="closed">Closed</option>
           </select>
           <button
@@ -447,12 +451,14 @@ function AdminDisputeManagement() {
                   <p className="text-sm text-gray-500 mb-1">Buyer</p>
                   <p className="text-base font-medium text-gray-900">
                     {selectedDispute.orderId?.customerId?.name ||
+                      selectedDispute.orderId?.userId?.name ||
                       (typeof selectedDispute.buyerId === "object"
                         ? selectedDispute.buyerId?.name
                         : "Unknown")}
                   </p>
                   <p className="text-sm text-gray-600">
                     {selectedDispute.orderId?.customerId?.email ||
+                      selectedDispute.orderId?.userId?.email ||
                       (typeof selectedDispute.buyerId === "object"
                         ? selectedDispute.buyerId?.email
                         : "")}
@@ -761,6 +767,14 @@ function AdminDisputeManagement() {
                 )}
                 <button
                   onClick={() => {
+                    setShowNotifyModal(true);
+                  }}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                >
+                  Notify
+                </button>
+                <button
+                  onClick={() => {
                     setShowDetailsModal(false);
                     setSelectedDispute(null);
                     setFullDisputeDetails(null);
@@ -856,6 +870,92 @@ function AdminDisputeManagement() {
                     "Submit Ruling"
                   )}
                 </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Notify Modal */}
+      {showNotifyModal && selectedDispute && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6"
+          >
+            <h2 className="text-2xl font-bold mb-4">Send Notification</h2>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const response = await axios.post(
+                    `https://agrofarm-vd8i.onrender.com/api/v1/admin/disputes/${selectedDispute._id}/notify`,
+                    notifyPayload,
+                    { withCredentials: true }
+                  );
+                  if (response.data.success) {
+                    toast.success(response.data.message || 'Notifications sent');
+                    setShowNotifyModal(false);
+                  } else {
+                    toast.error(response.data.message || 'Failed to send notifications');
+                  }
+                } catch (err) {
+                  console.error('Failed to send notifications:', err);
+                  toast.error(err.response?.data?.message || 'Failed to send notifications');
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Recipient</label>
+                <select
+                  value={notifyPayload.target}
+                  onChange={(e) => setNotifyPayload({ ...notifyPayload, target: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="buyer">Buyer</option>
+                  <option value="seller">Seller</option>
+                  <option value="both">Both</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                <input
+                  value={notifyPayload.title}
+                  onChange={(e) => setNotifyPayload({ ...notifyPayload, title: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Notification title"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+                <textarea
+                  value={notifyPayload.message}
+                  onChange={(e) => setNotifyPayload({ ...notifyPayload, message: e.target.value })}
+                  rows={4}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Notification message"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  id="sendEmail"
+                  type="checkbox"
+                  checked={notifyPayload.sendEmail}
+                  onChange={(e) => setNotifyPayload({ ...notifyPayload, sendEmail: e.target.checked })}
+                />
+                <label htmlFor="sendEmail" className="text-sm text-gray-700">Send email</label>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowNotifyModal(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Send</button>
               </div>
             </form>
           </motion.div>

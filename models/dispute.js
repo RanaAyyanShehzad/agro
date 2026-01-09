@@ -22,6 +22,25 @@ const disputeSchema = new mongoose.Schema({
     enum: ["farmer", "supplier"],
     required: true
   },
+  buyerRole: {
+    type: String,
+    enum: ["buyer", "farmer"],
+    required: false
+  },
+  productId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Products",
+    required: false
+  },
+  productOwnerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: false
+  },
+  productOwnerRole: {
+    type: String,
+    enum: ["farmer", "supplier"],
+    required: false
+  },
   disputeType: {
     type: String,
     enum: ["non_delivery", "product_fault", "wrong_item", "other"],
@@ -59,7 +78,7 @@ const disputeSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["open", "pending_admin_review", "closed"],
+    enum: ["open", "seller_responded", "pending_admin_review", "closed"],
     default: "open",
     index: true
   },

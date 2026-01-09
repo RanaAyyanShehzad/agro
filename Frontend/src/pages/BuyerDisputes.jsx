@@ -85,6 +85,7 @@ function BuyerDisputes() {
   const getStatusBadge = (status) => {
     const statusConfig = {
       open: { bg: "bg-yellow-100", text: "text-yellow-800", icon: Clock },
+      seller_responded: { bg: "bg-blue-100", text: "text-blue-800", icon: CheckCircle },
       pending_admin_review: {
         bg: "bg-orange-100",
         text: "text-orange-800",
@@ -118,10 +119,17 @@ function BuyerDisputes() {
 
   const canCreateDispute = (order) => {
     const status = order.orderStatus || order.status;
+    // If shipped, only allow if expected delivery date has passed (allow 1 day buffer)
+    if (status === "shipped") {
+      if (!order.expected_delivery_date) return false;
+      const now = new Date();
+      const expected = new Date(order.expected_delivery_date);
+      const oneDay = 24 * 60 * 60 * 1000;
+      if (now < new Date(expected.getTime() + oneDay)) return false;
+    }
+
     return (
-      (status === "shipped" ||
-        status === "delivered" ||
-        status === "received") &&
+      (status === "shipped" || status === "delivered" || status === "received") &&
       (!order.dispute_status || order.dispute_status === "none")
     );
   };
@@ -169,6 +177,7 @@ function BuyerDisputes() {
               <option value="all">All Disputes</option>
               <option value="open">Open</option>
               <option value="pending_admin_review">Pending Admin Review</option>
+              <option value="seller_responded">Seller Responded</option>
               <option value="closed">Closed</option>
             </select>
           </div>
@@ -415,7 +424,7 @@ function BuyerDisputes() {
                     <Eye className="w-4 h-4" />
                     View Details
                   </button>
-                  {dispute.status === "open" &&
+                  {(["open","seller_responded"].includes(dispute.status)) &&
                     dispute.sellerResponse?.proposal &&
                     dispute.sellerResponse?.respondedAt && (
                       <button
@@ -568,6 +577,12 @@ function BuyerDisputes() {
                           Open
                         </span>
                       );
+                    if (status === "seller_responded")
+                      return (
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium">
+                          Seller Responded
+                        </span>
+                      );
                     if (status === "pending_admin_review")
                       return (
                         <span className="px-3 py-1 bg-orange-100 text-orange-800 rounded-lg text-sm font-medium">
@@ -627,6 +642,30 @@ function BuyerDisputes() {
                         )}
                       </>
                     )}
+                </div>
+              </div>
+
+              {/* Buyer Info - NEW SECTION */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Your Info (Buyer)</p>
+                  <p className="text-base font-medium text-gray-900">
+                    {typeof selectedDispute.buyerId === "object" &&
+                    selectedDispute.buyerId?.name
+                      ? selectedDispute.buyerId.name
+                      : "You"}
+                  </p>
+                  {typeof selectedDispute.buyerId === "object" &&
+                    selectedDispute.buyerId?.email && (
+                      <p className="text-xs text-gray-600 mt-1">
+                        {selectedDispute.buyerId.email}
+                      </p>
+                    )}
+                  {selectedDispute.buyerRole && (
+                    <p className="text-xs text-gray-600 mt-1 capitalize">
+                      Role: {selectedDispute.buyerRole}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -754,6 +793,28 @@ function BuyerDisputes() {
                   </div>
                 )}
               </div>
+
+              {/* Action Buttons */}
+              {(["open", "seller_responded"].includes(selectedDispute.status)) &&
+                selectedDispute.sellerResponse?.proposal &&
+                selectedDispute.sellerResponse?.respondedAt && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <p className="text-sm font-medium text-green-800 mb-3">
+                      ✓ Seller has responded with a proposal. What would you like to do?
+                    </p>
+                    <button
+                      onClick={() => {
+                        setSelectedDispute(selectedDispute);
+                        setShowDetailsModal(false);
+                        setShowResolveModal(true);
+                      }}
+                      className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle className="w-5 h-5" />
+                      Accept or Reject Proposal
+                    </button>
+                  </div>
+                )}
             </div>
           </motion.div>
         </div>

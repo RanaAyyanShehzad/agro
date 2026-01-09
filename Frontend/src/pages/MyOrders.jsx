@@ -243,7 +243,23 @@ function MyOrders() {
       }
 
       const data = await response.json();
-      setOrders(data.orders || []);
+      const ordersData = data.orders || [];
+      
+      // Debug: Log orders with trackingId to verify deliveryInfo
+      const ordersWithTracking = ordersData.filter(o => o.trackingId);
+      if (ordersWithTracking.length > 0) {
+        console.log("Orders with tracking ID:", ordersWithTracking.map(o => ({
+          orderId: o._id,
+          trackingId: o.trackingId,
+          hasDeliveryInfo: !!o.deliveryInfo,
+          deliveryInfo: o.deliveryInfo,
+          vehicleName: o.deliveryInfo?.vehicle?.name,
+          riderName: o.deliveryInfo?.rider?.name,
+          status: o.status || o.orderStatus
+        })));
+      }
+      
+      setOrders(ordersData);
     } catch (err) {
       setError(err.message || "Failed to fetch orders");
       toast.error(err.message || "Failed to fetch orders");
@@ -864,8 +880,9 @@ function MyOrders() {
                           </p>
                         </div>
                       )}
-                      {/* Delivery Information */}
-                      {order.deliveryInfo?.vehicle && (
+                      {/* Delivery Information - COMMENTED OUT: Delivery info section not showing data properly */}
+                      {/* 
+                      {order.trackingId && (
                         <div className="md:col-span-2 bg-white p-3 rounded-lg border border-gray-200">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                             Delivery Information
@@ -873,19 +890,32 @@ function MyOrders() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                             <div>
                               <p className="text-gray-600 font-medium mb-1">Vehicle:</p>
-                              <p className="text-gray-900">{order.deliveryInfo.vehicle.name}</p>
-                              <p className="text-gray-600 text-xs">Reg: {order.deliveryInfo.vehicle.registrationNumber}</p>
-                              <p className="text-gray-600 text-xs">Type: {order.deliveryInfo.vehicle.vehicleType}</p>
-                              <p className="text-gray-600 text-xs">Contact: {order.deliveryInfo.vehicle.contactInfo}</p>
+                              {order.deliveryInfo?.vehicle && order.deliveryInfo.vehicle.name ? (
+                                <>
+                                  <p className="text-gray-900">{order.deliveryInfo.vehicle.name}</p>
+                                  <p className="text-gray-600 text-xs">Reg: {order.deliveryInfo.vehicle.registrationNumber || "N/A"}</p>
+                                  <p className="text-gray-600 text-xs">Type: {order.deliveryInfo.vehicle.vehicleType || "N/A"}</p>
+                                  <p className="text-gray-600 text-xs">Contact: {order.deliveryInfo.vehicle.contactInfo || "N/A"}</p>
+                                </>
+                              ) : (
+                                <p className="text-gray-500 text-xs italic">Vehicle information not available</p>
+                              )}
                             </div>
                             <div>
                               <p className="text-gray-600 font-medium mb-1">Rider:</p>
-                              <p className="text-gray-900">{order.deliveryInfo.rider?.name || "N/A"}</p>
-                              <p className="text-gray-600 text-xs">Contact: {order.deliveryInfo.rider?.contactInfo || "N/A"}</p>
+                              {order.deliveryInfo?.rider && order.deliveryInfo.rider.name ? (
+                                <>
+                                  <p className="text-gray-900">{order.deliveryInfo.rider.name}</p>
+                                  <p className="text-gray-600 text-xs">Contact: {order.deliveryInfo.rider.contactInfo || "N/A"}</p>
+                                </>
+                              ) : (
+                                <p className="text-gray-500 text-xs italic">Rider information not available</p>
+                              )}
                             </div>
                           </div>
                         </div>
                       )}
+                      */}
                     </div>
                   </div>
                 </div>

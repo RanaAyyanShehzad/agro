@@ -273,17 +273,71 @@ function OrderManagement() {
   // Mark order as Out for Delivery
   const handleMarkOutForDelivery = async (orderId, deliveryData) => {
     try {
-      const response = await fetch(
-        `https://agrofarm-vd8i.onrender.com/api/v1/order/${orderId}/out-for-delivery`,
-        {
-          method: "POST",
+      // Check if this is for a product-level status update (OrderMultiVendor)
+      const hasProductLevelStatus = orderToMarkOutForDelivery?.productItemId !== undefined;
+      
+      if (hasProductLevelStatus && orderToMarkOutForDelivery.productItemId) {
+        // For OrderMultiVendor, update product status with delivery info included
+        // The backend should handle delivery info in the product status update
+        const statusUpdateUrl = `https://agrofarm-vd8i.onrender.com/api/v1/order/${orderId}/product/${orderToMarkOutForDelivery.productItemId}/status`;
+        const statusResponse = await fetch(statusUpdateUrl, {
+          method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
           credentials: "include",
-          body: JSON.stringify(deliveryData),
+          body: JSON.stringify({ 
+            status: "out_for_delivery",
+            ...deliveryData // Include delivery info in the request
+          }),
+        });
+        
+        const data = await statusResponse.json();
+        
+        if (!statusResponse.ok) {
+          if (statusResponse.status === 400) {
+            throw new Error(data.message || "Invalid delivery information provided.");
+          } else if (statusResponse.status === 403) {
+            throw new Error(data.message || "You don't have permission to mark this order as out for delivery.");
+          } else if (statusResponse.status === 404) {
+            throw new Error(data.message || "Order not found");
+          } else {
+            throw new Error(data.message || `Failed to mark order as out for delivery: ${statusResponse.status}`);
+          }
         }
-      );
+
+        if (data.success) {
+          toast.success(data.message || "Order marked as out for delivery successfully");
+          setShowOutForDeliveryModal(false);
+          setOrderToMarkOutForDelivery(null);
+          setDeliveryForm({
+            vehicleName: "",
+            vehicleRegistrationNumber: "",
+            vehicleType: "Motorcycle",
+            vehicleContactInfo: "",
+            riderName: "",
+            riderContactInfo: ""
+          });
+          fetchOrders(); // Refresh orders
+          if (selectedOrder && selectedOrder._id === orderId) {
+            setSelectedOrder(data.data?.order || data.order);
+          }
+        } else {
+          toast.error(data.message || "Failed to mark order as out for delivery");
+        }
+        return;
+      }
+
+      // For Order model, use the dedicated endpoint
+      const url = `https://agrofarm-vd8i.onrender.com/api/v1/order/${orderId}/out-for-delivery`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(deliveryData),
+      });
 
       const data = await response.json();
 
@@ -330,37 +384,11 @@ function OrderManagement() {
     }
   };
 
-  // Validate status transition on frontend (must match backend allowedTransitions)
+  // Validate status transition on frontend - REMOVED: All transitions now allowed
+  // Backend no longer enforces transition restrictions, so frontend validation is disabled
   const validateStatusTransition = (currentStatus, newStatus) => {
-    // Backend allowedTransitions from controllers/order.js:
-    // pending → processing (via accept), cancelled (via reject)
-    // processing → shipped, cancelled
-    // shipped → out_for_delivery (use "Mark Out for Delivery" button, not dropdown)
-    // Note: delivered and received cannot be set by seller (buyer only)
-    const validTransitions = {
-      pending: ["cancelled"], // Accept changes to processing, reject changes to cancelled
-      processing: ["shipped", "cancelled"],
-      shipped: ["cancelled"], // out_for_delivery should use "Mark Out for Delivery" button, not dropdown
-      out_for_delivery: [], // Cannot be changed by seller - buyer must confirm delivery
-      delivered: [], // Cannot be changed by seller
-      received: [], // Final status
-      cancelled: [], // Final status
-      canceled: [], // Alias for cancelled
-    };
-
-    const current = (currentStatus || "").toLowerCase();
-    const next = (newStatus || "").toLowerCase();
-    const allowed = validTransitions[current] || [];
-
-    if (!allowed.includes(next)) {
-      return {
-        valid: false,
-        message: `Cannot change status from "${currentStatus}" to "${newStatus}". Allowed transitions: ${
-          allowed.join(", ") || "none (use accept/reject buttons for pending orders)"
-        }`,
-      };
-    }
-
+    // All transitions are now allowed (backend restrictions removed)
+    // Only basic validations remain (e.g., sellers can't mark as "delivered")
     return { valid: true };
   };
 
@@ -373,6 +401,19 @@ function OrderManagement() {
     if (!orderId || !productItemId) {
       toast.error("Missing order or product information");
       return;
+    }
+
+    // If status is "out_for_delivery", show the modal to collect vehicle/rider info
+    if (newStatus.toLowerCase() === "out_for_delivery") {
+      // Store the order and product info for the modal
+      const orderForModal = {
+        _id: orderId,
+        productItemId: productItemId,
+        ...selectedOrder
+      };
+      setOrderToMarkOutForDelivery(orderForModal);
+      setShowOutForDeliveryModal(true);
+      return; // Don't proceed with direct status update
     }
 
     try {
@@ -1813,53 +1854,29 @@ function OrderManagement() {
                                     const isOrderCancelled = orderStatus === "cancelled" || orderStatus === "canceled";
                                     
                                     // Get valid next statuses based on current status
-                                    // Must match backend allowedTransitions in controllers/order.js
-                                    const getValidNextStatuses = (
-                                      currentStatus
-                                    ) => {
-                                      const statusLower = (
-                                        currentStatus || ""
-                                      ).toLowerCase();
+                                      // Only allow advancing to the next status in sequence,
+                                      // and allow cancelling only before 'shipped'.
+                                      const getValidNextStatuses = (currentStatus) => {
+                                        const statusLower = (currentStatus || "").toLowerCase();
+                                        const sequence = ["pending", "processing", "shipped", "out_for_delivery", "delivered", "received"];
+                                        const idx = sequence.indexOf(statusLower);
 
-                                      // Backend allowedTransitions:
-                                      // pending → processing (via accept), cancelled (via reject)
-                                      // processing → shipped, cancelled
-                                      // shipped → out_for_delivery (use "Mark Out for Delivery" button, not dropdown)
-                                      // out_for_delivery → [] (buyer must confirm delivery)
-                                      // delivered → [] (cannot be changed by seller)
-                                      // received → [] (final status)
-                                      // cancelled → [] (final status)
-                                      
-                                      if (statusLower === "pending") {
-                                        // Pending orders should be accepted/rejected first, not status changed via dropdown
-                                        return [];
-                                      }
-                                      if (statusLower === "processing") {
-                                        return ["shipped", "cancelled"];
-                                      }
-                                      if (statusLower === "shipped") {
-                                        // Allow seller to mark as out_for_delivery via dropdown
-                                        return ["out_for_delivery", "cancelled"];
-                                      }
-                                      if (statusLower === "out_for_delivery") {
-                                        // Cannot be changed by seller - buyer must confirm delivery
-                                        return [];
-                                      }
-                                      if (statusLower === "delivered") {
-                                        // Cannot be changed by seller
-                                        return [];
-                                      }
-                                      if (statusLower === "received") {
-                                        // Final status - cannot be changed
-                                        return [];
-                                      }
-                                      if (statusLower === "cancelled" || statusLower === "canceled") {
-                                        // Final status - cannot be changed
-                                        return [];
-                                      }
-                                      // Unknown status - no transitions allowed
-                                      return [];
-                                    };
+                                        if (idx === -1) return [];
+
+                                        const next = [];
+                                        // if not the last status, allow only the immediate next
+                                        if (idx < sequence.length - 1) {
+                                          next.push(sequence[idx + 1]);
+                                        }
+
+                                        // Allow cancel only if current status is before 'shipped'
+                                        const shippedIdx = sequence.indexOf("shipped");
+                                        if (idx < shippedIdx) {
+                                          next.push("cancelled");
+                                        }
+
+                                        return next;
+                                      };
 
                                     const validStatuses =
                                       getValidNextStatuses(productStatus);
@@ -2308,10 +2325,15 @@ function OrderManagement() {
                         Vehicle Contact <span className="text-red-500">*</span>
                       </label>
                       <input
-                        type="text"
+                        type="tel"
                         value={deliveryForm.vehicleContactInfo}
-                        onChange={(e) => setDeliveryForm({...deliveryForm, vehicleContactInfo: e.target.value})}
+                        onChange={(e) => {
+                          // Only allow numbers, dashes, spaces, plus signs, and parentheses
+                          const value = e.target.value.replace(/[^\d\s\-+()]/g, '');
+                          setDeliveryForm({...deliveryForm, vehicleContactInfo: value});
+                        }}
                         placeholder="e.g., 0300-1234567"
+                        pattern="[0-9\s\-+()]+"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                         required
                       />
@@ -2341,10 +2363,15 @@ function OrderManagement() {
                         Rider Contact <span className="text-red-500">*</span>
                       </label>
                       <input
-                        type="text"
+                        type="tel"
                         value={deliveryForm.riderContactInfo}
-                        onChange={(e) => setDeliveryForm({...deliveryForm, riderContactInfo: e.target.value})}
+                        onChange={(e) => {
+                          // Only allow numbers, dashes, spaces, plus signs, and parentheses
+                          const value = e.target.value.replace(/[^\d\s\-+()]/g, '');
+                          setDeliveryForm({...deliveryForm, riderContactInfo: value});
+                        }}
                         placeholder="e.g., 0300-1234567"
+                        pattern="[0-9\s\-+()]+"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                         required
                       />

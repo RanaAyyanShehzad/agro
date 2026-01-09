@@ -69,6 +69,7 @@ function SupplierDisputes() {
   const getStatusBadge = (status) => {
     const statusConfig = {
       open: { bg: "bg-yellow-100", text: "text-yellow-800", icon: Clock },
+      seller_responded: { bg: "bg-blue-100", text: "text-blue-800", icon: CheckCircle },
       pending_admin_review: {
         bg: "bg-orange-100",
         text: "text-orange-800",
@@ -147,6 +148,7 @@ function SupplierDisputes() {
             <option value="all">All Disputes</option>
             <option value="open">Open</option>
             <option value="pending_admin_review">Pending Admin Review</option>
+            <option value="seller_responded">Seller Responded</option>
             <option value="closed">Closed</option>
           </select>
         </div>

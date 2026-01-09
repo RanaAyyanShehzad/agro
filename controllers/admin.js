@@ -1360,6 +1360,90 @@ export const getDisputeById = async (req, res, next) => {
   }
 };
 
+/**
+ * Notify parties about a dispute (admin only)
+ * POST /api/v1/admin/disputes/:disputeId/notify
+ */
+export const notifyDispute = async (req, res, next) => {
+  try {
+    const { disputeId } = req.params;
+    const { target = 'both', title, message, sendEmail = true } = req.body;
+
+    const dispute = await Dispute.findById(disputeId)
+      .populate('buyerId')
+      .populate('sellerId')
+      .lean();
+
+    if (!dispute) return next(new ErrorHandler('Dispute not found', 404));
+
+    const { createNotification } = await import('../utils/notifications.js');
+    const { buyer } = await import('../models/buyer.js');
+    const { farmer } = await import('../models/farmer.js');
+    const { supplier } = await import('../models/supplier.js');
+
+    // Helper to determine buyer role (buyer or farmer)
+    const resolveBuyerRole = async (id) => {
+      if (!id) return null;
+      const b = await buyer.findById(id);
+      if (b) return 'buyer';
+      const f = await farmer.findById(id);
+      if (f) return 'farmer';
+      const s = await supplier.findById(id);
+      if (s) return 'supplier';
+      return null;
+    };
+
+    const notifyTargets = [];
+    if (target === 'buyer' || target === 'both') notifyTargets.push('buyer');
+    if (target === 'seller' || target === 'both') notifyTargets.push('seller');
+
+    const promises = notifyTargets.map(async (t) => {
+      if (t === 'buyer' && dispute.buyerId) {
+        const resolvedRole = await resolveBuyerRole(dispute.buyerId);
+        const roleToUse = resolvedRole || 'buyer';
+        return createNotification(
+          dispute.buyerId,
+          roleToUse,
+          'admin_notice',
+          title || 'Notification from Admin',
+          message || `Admin message regarding dispute #${disputeId}`,
+          {
+            relatedId: dispute._id,
+            relatedType: 'dispute',
+            priority: 'high',
+            actionUrl: `/disputes/${dispute._id}`,
+            sendEmail
+          }
+        );
+      }
+      if (t === 'seller' && dispute.sellerId) {
+        const sellerRole = dispute.sellerRole || 'farmer';
+        return createNotification(
+          dispute.sellerId,
+          sellerRole,
+          'admin_notice',
+          title || 'Notification from Admin',
+          message || `Admin message regarding dispute #${disputeId}`,
+          {
+            relatedId: dispute._id,
+            relatedType: 'dispute',
+            priority: 'high',
+            actionUrl: `/disputes/${dispute._id}`,
+            sendEmail
+          }
+        );
+      }
+      return null;
+    });
+
+    await Promise.allSettled(promises);
+
+    res.status(200).json({ success: true, message: 'Notifications sent (or queued) to selected parties' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ============================================
 // USER SUSPENSION MANAGEMENT
 // ============================================

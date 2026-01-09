@@ -14,6 +14,7 @@ import {
   getAllOrdersAdmin, getOrderByIdAdmin, adminChangeOrderStatus, adminChangePaymentStatus,
   // Dispute management
   getAllDisputes, getDisputeById,
+  notifyDispute,
   // User suspension
   suspendUser, unsuspendUser,
   // Password management
@@ -79,6 +80,7 @@ router.get("/orders/:orderId/history", getOrderHistory);
 // Dispute management
 router.get("/disputes", getAllDisputes);
 router.get("/disputes/:disputeId", getDisputeById);
+router.post("/disputes/:disputeId/notify", notifyDispute);
 
 // User suspension
 router.post("/users/:role/:userId/suspend", suspendUser);

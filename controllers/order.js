@@ -285,11 +285,39 @@ export const getUserOrders = async (req, res, next) => {
     const userRole = getRole(req).role;
     
     // Get all orders for this user
+    // All fields are included by default (trackingId and deliveryInfo are not marked as select: false)
     const orders = await Order.find({ userId })
       .populate("products.productId")
       .populate("sellerId", "name email phone")
       .sort({ createdAt: -1 })
       .lean();
+    
+    // Ensure deliveryInfo is properly serialized (lean() should handle this, but let's be explicit)
+    const ordersWithDeliveryInfo = orders.map(order => {
+      // Ensure deliveryInfo is included and properly structured
+      if (order.trackingId && order.deliveryInfo) {
+        // Verify deliveryInfo structure
+        if (!order.deliveryInfo.vehicle && !order.deliveryInfo.rider) {
+          console.warn(`Order ${order._id} has trackingId but no deliveryInfo.vehicle or deliveryInfo.rider`);
+        }
+      }
+      return order;
+    });
+    
+    // Debug: Log orders with trackingId to verify deliveryInfo
+    const ordersWithTracking = ordersWithDeliveryInfo.filter(o => o.trackingId);
+    if (ordersWithTracking.length > 0) {
+      console.log("Orders with tracking ID from getUserOrders:", ordersWithTracking.map(o => ({
+        orderId: o._id,
+        trackingId: o.trackingId,
+        hasDeliveryInfo: !!o.deliveryInfo,
+        hasVehicle: !!o.deliveryInfo?.vehicle,
+        hasRider: !!o.deliveryInfo?.rider,
+        vehicleName: o.deliveryInfo?.vehicle?.name,
+        riderName: o.deliveryInfo?.rider?.name,
+        deliveryInfoKeys: o.deliveryInfo ? Object.keys(o.deliveryInfo) : []
+      })));
+    }
     
     // Group orders by orderGroupId for better organization
     const ordersByGroup = new Map();
@@ -308,8 +336,8 @@ export const getUserOrders = async (req, res, next) => {
     
     res.status(200).json({
       success: true,
-      count: orders.length,
-      orders: orders,
+      count: ordersWithDeliveryInfo.length,
+      orders: ordersWithDeliveryInfo,
       groupedOrders: Array.from(ordersByGroup.entries()).map(([groupId, groupOrders]) => ({
         orderGroupId: groupId,
         orders: groupOrders,
@@ -525,20 +553,20 @@ export const updateOrderStatus = async (req, res, next) => {
     // Time validation: Optional check if out_for_delivery timestamp exists
     // If timestamp exists, enforce minimum time requirement
     if (normalizedNewStatus === "delivered" && order.outForDeliveryAt) {
-      const config = await SystemConfig.findOne({
+        const config = await SystemConfig.findOne({ 
         configKey: CONFIG_KEYS.OUT_FOR_DELIVERY_TO_DELIVERED_MINUTES
-      });
+        });
       const minMinutes = config?.configValue || 1; // Default 1 minute for testing
-      const now = new Date();
+        const now = new Date();
       const timeDiff = (now - new Date(order.outForDeliveryAt)) / (1000 * 60); // minutes
 
-      if (timeDiff < minMinutes) {
-        const remainingMinutes = Math.ceil(minMinutes - timeDiff);
-        return next(new ErrorHandler(
+        if (timeDiff < minMinutes) {
+          const remainingMinutes = Math.ceil(minMinutes - timeDiff);
+          return next(new ErrorHandler(
           `Cannot mark as delivered yet. Please wait ${remainingMinutes} more minute(s). Minimum ${minMinutes} minutes required after being out for delivery.`,
-          400
-        ));
-      }
+            400
+          ));
+        }
     }
     // If outForDeliveryAt doesn't exist, allow the transition (flexible status management)
 
@@ -2038,12 +2066,31 @@ export const createDispute = async (req, res, next) => {
     const sellerModel = order.sellerModel;
     const sellerRole = sellerModel === "Farmer" ? "farmer" : "supplier";
 
+    // Look up the disputed product to get product owner info
+    let productOwner = null;
+    try {
+      const { product } = await import("../models/products.js");
+      const disputedProduct = await product.findById(productId).lean();
+      
+      if (disputedProduct && disputedProduct.upLoadedBy) {
+        productOwner = {
+          id: disputedProduct.upLoadedBy.userID,
+          role: disputedProduct.upLoadedBy.role
+        };
+      }
+    } catch (productLookupError) {
+      console.error("[DISPUTE] Failed to lookup product owner:", productLookupError);
+    }
+
     // Create dispute
     const dispute = await Dispute.create({
       orderId: order._id,
       buyerId: userId,
       sellerId: sellerId,
       sellerRole: sellerRole,
+      productId: productId,
+      productOwnerId: productOwner?.id || sellerId,
+      productOwnerRole: productOwner?.role || sellerRole,
       disputeType,
       reason,
       buyerProof: proofOfFault ? {
@@ -2058,15 +2105,20 @@ export const createDispute = async (req, res, next) => {
     order.dispute_status = "open";
     await order.save();
 
-    // Send notification to seller
+    // Send notification to product owner (farmer/supplier) if different from order seller
     try {
       const { createNotification } = await import("../utils/notifications.js");
+      
+      // Notify actual product owner
+      const productOwnerId = productOwner?.id || sellerId;
+      const productOwnerRole = productOwner?.role || sellerRole;
+      
       await createNotification(
-        sellerId,
-        sellerRole,
+        productOwnerId,
+        productOwnerRole,
         "dispute_created",
         "New Dispute Created",
-        `A dispute has been created for order #${orderId}. Please respond to resolve it.`,
+        `A dispute has been created for order #${orderId} regarding a product. Please respond to resolve it.`,
         {
           relatedId: dispute._id,
           relatedType: "dispute",
@@ -2075,8 +2127,33 @@ export const createDispute = async (req, res, next) => {
           sendEmail: true
         }
       );
+      console.log(`[DISPUTE] Product owner (${productOwnerRole}) ${productOwnerId} notified about dispute ${dispute._id}`);
     } catch (notifError) {
-      console.error("Failed to send dispute notification:", notifError);
+      console.error("[DISPUTE ERROR] Failed to send product owner notification:", notifError);
+    }
+
+    // Notify buyer (confirmation)
+    try {
+      const { createNotification } = await import("../utils/notifications.js");
+      const buyerRole = order.userRole || "buyer";
+      
+      await createNotification(
+        userId,
+        buyerRole,
+        "dispute_created_confirm",
+        "Dispute Created",
+        `Your dispute for order #${orderId} has been submitted. The seller has been notified.`,
+        {
+          relatedId: dispute._id,
+          relatedType: "dispute",
+          actionUrl: `/disputes/${dispute._id}`,
+          priority: "medium",
+          sendEmail: true
+        }
+      );
+      console.log(`[DISPUTE] Buyer (${buyerRole}) ${userId} notified about dispute creation for order ${orderId}`);
+    } catch (notifErr) {
+      console.error("[DISPUTE ERROR] Failed to send buyer notification:", notifErr);
     }
 
     // Populate dispute for response
@@ -2353,13 +2430,15 @@ export const respondToDispute = async (req, res, next) => {
       proposal: proposal.trim(),
       respondedAt: new Date()
     };
-    dispute.status = "pending_admin_review";
+    // Mark that seller has responded and buyer needs to take action first
+    dispute.status = "seller_responded";
 
     // Update order dispute status
     const orderId = dispute.orderId?._id || dispute.orderId?.toString() || dispute.orderId;
     const order = await Order.findById(orderId);
     if (order) {
-      order.dispute_status = "pending_admin_review";
+      // Keep overall order dispute open while buyer reviews proposal
+      order.dispute_status = "open";
       await order.save();
     }
 
@@ -2454,16 +2533,27 @@ export const adminRuling = async (req, res, next) => {
 
     await dispute.save();
 
-    // Send notifications to both parties
+    // Send notifications to both parties (automatically)
     try {
       const { createNotification } = await import("../utils/notifications.js");
-      const winner = decision === "buyer_win" ? dispute.buyerId : dispute.sellerId;
-      const loser = decision === "buyer_win" ? dispute.sellerId : dispute.buyerId;
-      const winnerRole = decision === "buyer_win" ? "buyer" : dispute.sellerRole;
-      const loserRole = decision === "buyer_win" ? dispute.sellerRole : "buyer";
+
+      // Helper to extract id from populated or raw value
+      const extractId = (val) => {
+        if (!val) return val;
+        if (typeof val === "string") return val;
+        if (val._id) return val._id;
+        if (val.id) return val.id;
+        return val;
+      };
+
+      const winnerId = decision === "buyer_win" ? extractId(dispute.buyerId) : (dispute.productOwnerId ? dispute.productOwnerId : extractId(dispute.sellerId));
+      const loserId = decision === "buyer_win" ? (dispute.productOwnerId ? dispute.productOwnerId : extractId(dispute.sellerId)) : extractId(dispute.buyerId);
+
+      const winnerRole = decision === "buyer_win" ? (dispute.buyerRole || "buyer") : (dispute.productOwnerRole || dispute.sellerRole || "seller");
+      const loserRole = decision === "buyer_win" ? (dispute.productOwnerRole || dispute.sellerRole || "seller") : (dispute.buyerRole || "buyer");
 
       await createNotification(
-        winner,
+        winnerId,
         winnerRole,
         "dispute_resolved",
         "Dispute Resolved in Your Favor",
@@ -2477,7 +2567,7 @@ export const adminRuling = async (req, res, next) => {
       );
 
       await createNotification(
-        loser,
+        loserId,
         loserRole,
         "dispute_resolved",
         "Dispute Resolved",
@@ -2547,8 +2637,8 @@ export const resolveDispute = async (req, res, next) => {
       return next(new ErrorHandler("Seller has not responded to this dispute yet", 400));
     }
 
-    // Check if dispute is in pending_admin_review status
-    if (dispute.status !== "pending_admin_review") {
+    // Allow buyer to resolve when seller has responded or when already escalated
+    if (!["seller_responded", "pending_admin_review"].includes(dispute.status)) {
       return next(new ErrorHandler(`Cannot resolve dispute. Current status: "${dispute.status}"`, 400));
     }
 
@@ -2597,6 +2687,34 @@ export const resolveDispute = async (req, res, next) => {
       // Buyer rejects seller's proposal - escalate to admin
       dispute.status = "pending_admin_review";
       await dispute.save();
+
+      // Notify admins about escalation
+      try {
+        const { createNotification } = await import("../utils/notifications.js");
+        const { admin } = await import("../models/admin.js");
+        const admins = await admin.find({});
+        const orderRef = dispute.orderId?._id || dispute.orderId;
+        const message = `Dispute #${dispute._id} for order #${orderRef} has been escalated for admin review.`;
+        const notifyPromises = admins.map((a) =>
+          createNotification(
+            a._id,
+            "admin",
+            "dispute_escalated",
+            "Dispute Escalated to Admin",
+            message,
+            {
+              relatedId: dispute._id,
+              relatedType: "dispute",
+              actionUrl: `/admin/disputes/${dispute._id}`,
+              priority: "high",
+              sendEmail: true,
+            }
+          )
+        );
+        await Promise.allSettled(notifyPromises);
+      } catch (notifErr) {
+        console.error("Failed to notify admins about dispute escalation:", notifErr);
+      }
 
       res.status(200).json({
         success: true,
