@@ -1987,7 +1987,7 @@ export const getOrdersByGroup = async (req, res, next) => {
 export const createDispute = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const { disputeType, reason, proofOfFault } = req.body;
+    const { disputeType, reason, proofOfFault, productId } = req.body;
     const userId = req.user._id || req.user.id;
     const userRole = getRole(req).role;
 
@@ -2066,20 +2066,22 @@ export const createDispute = async (req, res, next) => {
     const sellerModel = order.sellerModel;
     const sellerRole = sellerModel === "Farmer" ? "farmer" : "supplier";
 
-    // Look up the disputed product to get product owner info
+    // Look up the disputed product to get product owner info (optional)
     let productOwner = null;
-    try {
-      const { product } = await import("../models/products.js");
-      const disputedProduct = await product.findById(productId).lean();
-      
-      if (disputedProduct && disputedProduct.upLoadedBy) {
-        productOwner = {
-          id: disputedProduct.upLoadedBy.userID,
-          role: disputedProduct.upLoadedBy.role
-        };
+    if (productId) {
+      try {
+        const { product } = await import("../models/products.js");
+        const disputedProduct = await product.findById(productId).lean();
+        
+        if (disputedProduct && disputedProduct.upLoadedBy) {
+          productOwner = {
+            id: disputedProduct.upLoadedBy.userID,
+            role: disputedProduct.upLoadedBy.role
+          };
+        }
+      } catch (productLookupError) {
+        console.error("[DISPUTE] Failed to lookup product owner:", productLookupError);
       }
-    } catch (productLookupError) {
-      console.error("[DISPUTE] Failed to lookup product owner:", productLookupError);
     }
 
     // Determine buyer role

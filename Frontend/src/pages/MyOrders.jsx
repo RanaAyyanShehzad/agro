@@ -992,7 +992,7 @@ function MyOrders() {
                                 >
                                   Create Dispute
                                 </button>
-                                <button
+                              { /*  <button
                                   onClick={() => confirmOrderReceipt(order._id)}
                                   disabled={confirmingOrderId === order._id}
                                   className={`px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow transition font-medium flex items-center gap-2 ${
@@ -1009,7 +1009,7 @@ function MyOrders() {
                                   ) : (
                                     "Confirm Receipt"
                                   )}
-                                </button>
+                                </button> */}
                                 {disputeCheck.daysRemaining !== undefined && (
                                   <p className="text-sm text-gray-500 italic self-center">
                                     {disputeCheck.daysRemaining > 0
