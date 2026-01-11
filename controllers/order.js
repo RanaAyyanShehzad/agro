@@ -407,22 +407,25 @@ export const getOrderById = async (req, res, next) => {
     if (userRole === 'supplier' || userRole === 'farmer') {
       const expectedModel = userRole === 'farmer' ? 'Farmer' : 'Supplier';
       
-      if (order.sellerId.toString() !== userId.toString() || order.sellerModel !== expectedModel) {
-        return next(new ErrorHandler("Order not found", 404));
+      // If sellerId is populated, it's an object. We need to compare its _id.
+      if (
+        order.sellerId &&
+        order.sellerId._id.toString() === userId.toString() &&
+        order.sellerModel === expectedModel
+      ) {
+          // Return order with customer information
+          return res.status(200).json({ 
+            success: true, 
+            order: {
+              ...order,
+              userId: order.userId ? {
+                _id: order.userId,
+                ...customerInfo
+              } : null,
+              customer: customerInfo
+            }
+          });
       }
-      
-      // Return order with customer information
-      return res.status(200).json({ 
-        success: true, 
-        order: {
-          ...order,
-          userId: order.userId ? {
-            _id: order.userId,
-            ...customerInfo
-          } : null,
-          customer: customerInfo
-        }
-      });
     }
 
     // For buyers/farmers (customers), only show their own orders
