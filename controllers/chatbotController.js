@@ -111,6 +111,8 @@ const askGemini = async (question) => {
     if (!apiKey) {
       return "I'm currently unable to access AI services. Please check our FAQ section or contact support for assistance.";
     }
+    const model = "llama-3.3-70b-versatile"; 
+    const url = "https://api.groq.com/openai/v1/chat/completions";
     const prompt = `You are an expert Pakistani agricultural consultant for Agro Farm Connect platform. 
     
     IMPORTANT: You ONLY answer questions related to agriculture, farming, crops, livestock, and rural development in Pakistan. 
@@ -129,21 +131,27 @@ const askGemini = async (question) => {
     Keep responses concise but informative (2-3 paragraphs max).`;
 
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+     url,
       {
-        contents: [
+        model: model,
+        messages: [
           {
             role: "user",
-            parts: [{ text: prompt }]
-          }
-        ]
+            content: prompt,
+          },
+        ],
+        temperature: 0.7, // Keeps responses focused but natural
+        max_tokens: 1024,
       },
       {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
       }
     );
 
-    const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = response.data.choices[0]?.message?.content 
     return text || "I couldn't generate a response for your question. Please try rephrasing or check our FAQ section.";
   } catch (err) {
     console.error(" Gemini API error:", err.response?.data || err.message);
