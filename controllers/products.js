@@ -126,7 +126,7 @@ export const getAllProducts = async (req, res, next) => {
 export const getAllProductsForFarmer = async (req, res, next) => {
   try {
     const { userId, role } = getUserAndRole(req);
-    const sortBy = req.query.sort || "rating";
+    const sortBy = req.query.sort || "positive";
 
     if (role !== "farmer") {
       return next(new ErrorHandler("Only farmers can access this route", 403));
