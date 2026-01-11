@@ -48,10 +48,10 @@ export const addProduct = async (req, res, next) => {
         // if (!nameRegex.test(name)) {
         //     return next(new ErrorHandler("Name can only contain letters, spaces, and hyphens.", 400));
         // }
-if(price<=0 && price>=2000000){
+if(price<=1 && price>=200000){
     return next(new ErrorHandler("Price must be greater than 0 and less than 2000000", 400));
 }
-if(quantity<=0 && quantity>=1000){
+if(quantity<=1 && quantity>=1000){
     return next(new ErrorHandler("Quantity must be greater than 0 and less than 10000", 400));
 }
         const uploader = await getUploader(userId, role);
@@ -83,7 +83,7 @@ if(quantity<=0 && quantity>=1000){
 // Get all products
 export const getAllProducts = async (req, res, next) => {
   try {
-    const sortBy = req.query.sort || "rating"; // optional query param: rating, positive, etc.
+    const sortBy = req.query.sort || "positive"; // optional query param: rating, positive, etc.
     // Exclude soft-deleted and inactive products
     const products = await product.find({ 
       isDeleted: false, 
